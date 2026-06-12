@@ -1,0 +1,18 @@
+{
+  "window": {
+    "title": "Lightweight Open-Wheel Sim Prototype",
+    "width": 1280,
+    "height": 720,
+    "fullscreen": false,
+    "borderless": false
+  },
+  "render": {
+    "vsync": true,
+    "scale": 1.0,
+    "shadow_map_size": 2048
+  },
+  "simulation": {
+    "physics_hz": 360,
+    "max_frame_delta": 0.1
+  }
+}
