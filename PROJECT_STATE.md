@@ -566,6 +566,11 @@ shadow-update interval pass, and the R-6 half-precision bloom shader pass:
 - after the R-6 half-precision bloom shader change, the benchmark exited with:
   `FPS 49.5`, `FRAME 20.21 ms`, `PHYS 0.034 ms`, `RENDER 19.78 ms`, and
   `PHYS_STEPS 358.4/s`.
+- final verification after the documentation consistency pass rebuilt cleanly,
+  passed `ctest`, and benchmarked at `FPS 49.0`, `FRAME 20.39 ms`,
+  `PHYS 0.032 ms`, `RENDER 19.96 ms`, and `PHYS_STEPS 358.4/s`. This is a
+  clear recovery from the 42.6 FPS baseline, but it is not yet a stable 60 FPS
+  result on this machine.
 - the self-contained Release app was approximately 11 MB, under the current
   100 MB app/asset budget
 - the full asset folder was approximately 8.3 MB; generated OBJ meshes were
