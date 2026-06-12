@@ -1756,7 +1756,6 @@ const char* shaderSource() {
             texture2d<float> hdrTexture [[texture(0)]],
             texture2d<float> bloomTexture [[texture(1)]],
             texture2d<float> bloomQuarterTexture [[texture(2)]],
-            texture2d<float> bloomEighthTexture [[texture(3)]],
             sampler linearSampler [[sampler(0)]]) {
             const float2 uv = clamp(input.data.xy, 0.0, 1.0);
             const float speedBlur = clamp(uniforms.effectParams.x, 0.0, 1.0);
@@ -1781,8 +1780,7 @@ const char* shaderSource() {
             }
             color /= blurWeight;
             color += bloomTexture.sample(linearSampler, uv).rgb * 0.86;
-            color += bloomQuarterTexture.sample(linearSampler, uv).rgb * 0.72;
-            color += bloomEighthTexture.sample(linearSampler, uv).rgb * 0.46;
+            color += bloomQuarterTexture.sample(linearSampler, uv).rgb * 0.98;
             return float4(lensGrade(color, uv, 1.0), 1.0);
         }
     )METAL";
@@ -1842,7 +1840,6 @@ struct MetalRenderer::Impl {
     id<MTLTexture> msaaHdrTexture = nil;
     id<MTLTexture> bloomTexture = nil;
     id<MTLTexture> bloomQuarterTexture = nil;
-    id<MTLTexture> bloomEighthTexture = nil;
     id<MTLTexture> shadowDepthTexture = nil;
     id<MTLTexture> asphaltAlbedoTexture = nil;
     id<MTLTexture> asphaltNormalTexture = nil;
@@ -1866,7 +1863,6 @@ struct MetalRenderer::Impl {
     MTLRenderPassDescriptor* passDescriptor = nil;
     MTLRenderPassDescriptor* bloomPassDescriptor = nil;
     MTLRenderPassDescriptor* bloomQuarterPassDescriptor = nil;
-    MTLRenderPassDescriptor* bloomEighthPassDescriptor = nil;
     MTLRenderPassDescriptor* finalPassDescriptor = nil;
     MTLRenderPassDescriptor* shadowPassDescriptor = nil;
     std::array<Vertex, kMaxUiVertices> uiVertices{};
@@ -2307,7 +2303,7 @@ struct MetalRenderer::Impl {
         const int height = std::max(1, static_cast<int>(static_cast<float>(windowPixelHeight) * renderScale));
         if (width == drawableWidth && height == drawableHeight && depthTexture != nil &&
             msaaDepthTexture != nil && hdrTexture != nil && msaaHdrTexture != nil &&
-            bloomTexture != nil && bloomQuarterTexture != nil && bloomEighthTexture != nil) {
+            bloomTexture != nil && bloomQuarterTexture != nil) {
             return;
         }
         drawableWidth = width;
@@ -2373,15 +2369,6 @@ struct MetalRenderer::Impl {
         bloomQuarterDescriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
         bloomQuarterDescriptor.storageMode = MTLStorageModePrivate;
         bloomQuarterTexture = [device newTextureWithDescriptor:bloomQuarterDescriptor];
-
-        MTLTextureDescriptor* bloomEighthDescriptor =
-            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
-                                                               width:std::max(1, width / 8)
-                                                              height:std::max(1, height / 8)
-                                                           mipmapped:NO];
-        bloomEighthDescriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-        bloomEighthDescriptor.storageMode = MTLStorageModePrivate;
-        bloomEighthTexture = [device newTextureWithDescriptor:bloomEighthDescriptor];
 
         if (shadowDepthTexture == nil) {
             MTLTextureDescriptor* shadowDescriptor =
@@ -3031,13 +3018,11 @@ bool MetalRenderer::initialize(
     impl_->passDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
     impl_->bloomPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
     impl_->bloomQuarterPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
-    impl_->bloomEighthPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
     impl_->finalPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
     impl_->shadowPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
     if (impl_->commandQueue == nil || impl_->passDescriptor == nil ||
         impl_->bloomPassDescriptor == nil || impl_->bloomQuarterPassDescriptor == nil ||
-        impl_->bloomEighthPassDescriptor == nil || impl_->finalPassDescriptor == nil ||
-        impl_->shadowPassDescriptor == nil) {
+        impl_->finalPassDescriptor == nil || impl_->shadowPassDescriptor == nil) {
         impl_->error = "Could not create Metal command objects";
         return false;
     }
@@ -3055,7 +3040,6 @@ void MetalRenderer::shutdown() {
     impl_->msaaHdrTexture = nil;
     impl_->bloomTexture = nil;
     impl_->bloomQuarterTexture = nil;
-    impl_->bloomEighthTexture = nil;
     impl_->shadowDepthTexture = nil;
     impl_->asphaltAlbedoTexture = nil;
     impl_->asphaltNormalTexture = nil;
@@ -3106,7 +3090,6 @@ void MetalRenderer::shutdown() {
     impl_->passDescriptor = nil;
     impl_->bloomPassDescriptor = nil;
     impl_->bloomQuarterPassDescriptor = nil;
-    impl_->bloomEighthPassDescriptor = nil;
     impl_->finalPassDescriptor = nil;
     impl_->shadowPassDescriptor = nil;
     impl_->layer = nil;
@@ -3127,7 +3110,7 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
         if (impl_->depthTexture == nil || impl_->msaaDepthTexture == nil ||
             impl_->hdrTexture == nil || impl_->msaaHdrTexture == nil ||
             impl_->bloomTexture == nil || impl_->bloomQuarterTexture == nil ||
-            impl_->bloomEighthTexture == nil || impl_->shadowDepthTexture == nil) {
+            impl_->shadowDepthTexture == nil) {
             impl_->error = "Could not create the Metal render targets";
             return false;
         }
@@ -3704,18 +3687,6 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
                 "Could not create Metal quarter-resolution bloom encoder")) {
             return false;
         }
-        if (!runBloomPass(
-                impl_->bloomEighthPassDescriptor,
-                impl_->bloomEighthTexture,
-                impl_->bloomQuarterTexture,
-                std::max(1, impl_->drawableWidth / 8),
-                std::max(1, impl_->drawableHeight / 8),
-                std::max(1, impl_->drawableWidth / 4),
-                std::max(1, impl_->drawableHeight / 4),
-                "Could not create Metal eighth-resolution bloom encoder")) {
-            return false;
-        }
-
         impl_->finalPassDescriptor.colorAttachments[0].texture = drawable.texture;
         impl_->finalPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
         impl_->finalPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -3750,7 +3721,6 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
         [finalEncoder setFragmentTexture:impl_->hdrTexture atIndex:0];
         [finalEncoder setFragmentTexture:impl_->bloomTexture atIndex:1];
         [finalEncoder setFragmentTexture:impl_->bloomQuarterTexture atIndex:2];
-        [finalEncoder setFragmentTexture:impl_->bloomEighthTexture atIndex:3];
         [finalEncoder setFragmentSamplerState:impl_->fontSampler atIndex:0];
         [finalEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:impl_->skyVertexCount];
 

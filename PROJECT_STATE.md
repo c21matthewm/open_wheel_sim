@@ -33,7 +33,7 @@ SDL3 haptic force-feedback backend plumbing, a generated skybox/sky pass, HDR
 post processing, an interactive tuning menu, a personal-best ghost car, fixed
 chase/cockpit camera modes, and a more polished HUD/camera presentation with
 Cook-Torrance material lighting, material occlusion/contact-shadow grounding,
-mip-chain bloom,
+two-level bloom,
 frosted HDR HUD glass, dynamic suspension rods, 360 Hz default physics timing,
 locked-distance chase camera framing, center-protected high-speed post blur,
 launch wheelspin-aware automatic shifting, a geometric 9500-RPM-drop speedway
@@ -102,8 +102,8 @@ The current app can:
 - render the scene through configurable 2x default multisampled RGBA16Float HDR
   color and depth targets, resolve the smoothed scene into the single-sample HDR
   texture,
-  extract bright highlights through half-, quarter-, and eighth-resolution
-  bloom targets, and composite the mip-chain bloom plus a reduced,
+  extract bright highlights through half- and quarter-resolution bloom targets,
+  and composite the two-level bloom plus a reduced,
   center-protected speed-weighted radial motion-blur approximation in a final
   post pass before HUD/text rendering
 - use a fixed-distance chase camera with constant 50-degree FOV, locked
@@ -241,8 +241,8 @@ The current app can:
   grounding, not full-track long-distance shadow coverage. The default
   2048x2048 map uses a tightened roughly 80 m local frustum and broadened
   Poisson-disk filtering; target TV/display verification is still useful.
-- Bloom now uses a lightweight downsample chain with half-, quarter-, and
-  eighth-resolution targets, but it is still simpler than a large-radius
+- Bloom now uses a lightweight two-level downsample chain with half- and
+  quarter-resolution targets, but it is still simpler than a large-radius
   production bloom pyramid. Motion blur remains a screen-space radial
   approximation rather than a true per-pixel velocity-buffer pass.
 - HUD glass samples and blurs the resolved HDR scene buffer behind the UI
@@ -333,9 +333,9 @@ The current app can:
     and soft smoke/dust/spark particles into configurable 2x default multisampled
     RGBA16Float HDR/depth targets, then resolves color into the single-sample
     HDR texture.
-13. Metal extracts bright pixels through half-, quarter-, and
-    eighth-resolution bloom targets.
-14. Metal composites HDR color, mip-chain bloom, speed-weighted radial blur,
+13. Metal extracts bright pixels through half- and quarter-resolution bloom
+    targets.
+14. Metal composites HDR color, two-level bloom, speed-weighted radial blur,
     ACES tone mapping, gamma correction, and lens grading into the drawable.
 15. Metal draws the HDR-sampling frosted-glass HUD, menu text, and
     debug/device/lap overlay onto the final drawable.
@@ -382,7 +382,7 @@ Physics behavior is not tied to the render frame rate.
   carbon/tire micro-detail, skybox-backed clearcoat environment reflection,
   material occlusion and contact-shadow grounding, visor-glass shading,
   configurable 2048-default Poisson-filtered shadow-map pass,
-  half/quarter/eighth bloom chain, HDR
+  half/quarter bloom chain, HDR
   sharpening, livery masks, sky-matched fog, fixed
   chase/cockpit camera modes that consume chassis attitude, direct
   locked-distance chase camera translation, rearward/upward seated cockpit
@@ -499,7 +499,8 @@ manual-mode RPM limiter bounce, force-at-corner rigid-body yaw integration,
 tire temperature/thermal-grip telemetry, generated PBR texture maps,
 skybox-backed environment lighting/reflections, removed exhaust flame/heat
 shimmer effects, the MoTeC-style HUD pass, the R-1 render-performance
-shadow-map recovery pass, and the R-2 MSAA recovery pass:
+shadow-map recovery pass, the R-2 MSAA recovery pass, and the R-3 bloom-chain
+simplification pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -540,6 +541,10 @@ shadow-map recovery pass, and the R-2 MSAA recovery pass:
   `SIM_BENCHMARK_SECONDS=8 ./build/LightweightSim.app/Contents/MacOS/LightweightSim`
   exited with: `FPS 48.1`, `FRAME 20.79 ms`, `PHYS 0.036 ms`,
   `RENDER 20.17 ms`, and `PHYS_STEPS 357.8/s`.
+- after the R-3 removal of the eighth-resolution bloom pass, the same benchmark
+  exited with: `FPS 47.9`, `FRAME 20.89 ms`, `PHYS 0.034 ms`,
+  `RENDER 20.46 ms`, and `PHYS_STEPS 359.1/s`, indicating no measurable gain
+  from that pass removal on this run.
 - the self-contained Release app was approximately 11 MB, under the current
   100 MB app/asset budget
 - the full asset folder was approximately 8.3 MB; generated OBJ meshes were
@@ -560,7 +565,7 @@ Not verified:
   text display, high-resolution mipmapped PBR textures, skybox reflections,
   Cook-Torrance highlights, material occlusion/contact-shadow grounding,
   ground-aware clearcoat reflection, revised sky/material/post grade, retuned
-  mip-chain bloom, 2x default MSAA edges, 2048 local soft shadows,
+  two-level bloom, 2x default MSAA edges, 2048 local soft shadows,
   MoTeC HUD frosted glass,
   removed exhaust flame/heat shimmer effects, soft smoke/dust/sparks, and
   skidmark path on a physical display
