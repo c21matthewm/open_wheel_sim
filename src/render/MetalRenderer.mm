@@ -1727,34 +1727,35 @@ const char* shaderSource() {
             return float4(input.color.rgb, input.color.a * alpha);
         }
 
-        fragment float4 fragment_bloom(
+        fragment half4 fragment_bloom(
             VertexOutput input [[stage_in]],
             constant Uniforms& uniforms [[buffer(1)]],
-            texture2d<float> hdrTexture [[texture(0)]],
+            texture2d<half> hdrTexture [[texture(0)]],
             sampler linearSampler [[sampler(0)]]) {
             const float2 uv = clamp(input.data.xy, 0.0, 1.0);
             const float2 texel = 1.0 / max(uniforms.renderParams.xy, float2(1.0));
-            float3 sum = float3(0.0);
-            float weight = 0.0;
+            half3 sum = half3(0.0h);
+            half weight = 0.0h;
             for (int y = -3; y <= 3; ++y) {
                 for (int x = -3; x <= 3; ++x) {
                     const float2 offset = float2(x, y) * texel * 3.0;
-                    const float w = 1.0 / (1.0 + length(float2(x, y)));
-                    const float3 c = hdrTexture.sample(linearSampler, uv + offset).rgb;
-                    const float luma = dot(c, float3(0.2126, 0.7152, 0.0722));
-                    sum += max(c - 0.88, float3(0.0)) * smoothstep(0.66, 2.20, luma) * w;
+                    const half w = half(1.0 / (1.0 + length(float2(x, y))));
+                    const half3 c = hdrTexture.sample(linearSampler, uv + offset).rgb;
+                    const half luma = dot(c, half3(0.2126h, 0.7152h, 0.0722h));
+                    sum += max(c - half3(0.88h), half3(0.0h)) *
+                           smoothstep(0.66h, 2.20h, luma) * w;
                     weight += w;
                 }
             }
-            return float4(sum / max(weight, 0.001), 1.0);
+            return half4(sum / max(weight, 0.001h), 1.0h);
         }
 
         fragment float4 fragment_post(
             VertexOutput input [[stage_in]],
             constant Uniforms& uniforms [[buffer(1)]],
             texture2d<float> hdrTexture [[texture(0)]],
-            texture2d<float> bloomTexture [[texture(1)]],
-            texture2d<float> bloomQuarterTexture [[texture(2)]],
+            texture2d<half> bloomTexture [[texture(1)]],
+            texture2d<half> bloomQuarterTexture [[texture(2)]],
             sampler linearSampler [[sampler(0)]]) {
             const float2 uv = clamp(input.data.xy, 0.0, 1.0);
             const float speedBlur = clamp(uniforms.effectParams.x, 0.0, 1.0);
@@ -1778,8 +1779,10 @@ const char* shaderSource() {
                 blurWeight += 0.045;
             }
             color /= blurWeight;
-            color += bloomTexture.sample(linearSampler, uv).rgb * 0.86;
-            color += bloomQuarterTexture.sample(linearSampler, uv).rgb * 0.98;
+            const half3 bloom =
+                bloomTexture.sample(linearSampler, uv).rgb * 0.86h +
+                bloomQuarterTexture.sample(linearSampler, uv).rgb * 0.98h;
+            color += float3(bloom);
             return float4(lensGrade(color, uv, 1.0), 1.0);
         }
     )METAL";

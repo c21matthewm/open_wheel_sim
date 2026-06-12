@@ -33,7 +33,7 @@ SDL3 haptic force-feedback backend plumbing, a generated skybox/sky pass, HDR
 post processing, an interactive tuning menu, a personal-best ghost car, fixed
 chase/cockpit camera modes, and a more polished HUD/camera presentation with
 Cook-Torrance material lighting, material occlusion/contact-shadow grounding,
-two-level bloom,
+half-precision two-level bloom,
 frosted HDR HUD glass, dynamic suspension rods, 360 Hz default physics timing,
 locked-distance chase camera framing, center-protected high-speed post blur,
 launch wheelspin-aware automatic shifting, a geometric 9500-RPM-drop speedway
@@ -104,8 +104,9 @@ The current app can:
 - render the scene through configurable 2x default multisampled RGBA16Float HDR
   color and depth targets, resolve the smoothed scene into the single-sample HDR
   texture,
-  extract bright highlights through half- and quarter-resolution bloom targets,
-  and composite the two-level bloom plus a reduced,
+  extract bright highlights through half- and quarter-resolution bloom targets
+  using half-precision bloom shader math, and composite the two-level bloom plus
+  a reduced,
   center-protected speed-weighted radial motion-blur approximation in a final
   post pass before HUD/text rendering
 - use a fixed-distance chase camera with constant 50-degree FOV, locked
@@ -246,9 +247,10 @@ The current app can:
   Poisson-disk filtering, and a default every-other-frame update cadence with a
   cached light matrix; target TV/display verification is still useful.
 - Bloom now uses a lightweight two-level downsample chain with half- and
-  quarter-resolution targets, but it is still simpler than a large-radius
-  production bloom pyramid. Motion blur remains a screen-space radial
-  approximation rather than a true per-pixel velocity-buffer pass.
+  quarter-resolution targets and half-precision bloom shader math, but it is
+  still simpler than a large-radius production bloom pyramid. Motion blur
+  remains a screen-space radial approximation rather than a true per-pixel
+  velocity-buffer pass.
 - HUD glass samples and blurs the resolved HDR scene buffer behind the UI
   panels, but the blur is a compact 7-tap shader pass rather than a
   large-radius production separable blur or full optical glass model.
@@ -340,7 +342,7 @@ The current app can:
     RGBA16Float HDR/depth targets, then resolves color into the single-sample
     HDR texture.
 13. Metal extracts bright pixels through half- and quarter-resolution bloom
-    targets.
+    targets using half-precision bloom shader arithmetic.
 14. Metal composites HDR color, two-level bloom, speed-weighted radial blur,
     ACES tone mapping, gamma correction, and lens grading into the drawable.
 15. Metal draws the HDR-sampling frosted-glass HUD, menu text, and
@@ -388,7 +390,7 @@ Physics behavior is not tied to the render frame rate.
   carbon/tire micro-detail, skybox-backed clearcoat environment reflection,
   material occlusion and contact-shadow grounding, visor-glass shading,
   configurable 2048-default Poisson-filtered shadow-map pass,
-  half/quarter bloom chain, HDR
+  half-precision half/quarter bloom chain, HDR
   sharpening, livery masks, sky-matched fog, fixed
   chase/cockpit camera modes that consume chassis attitude, direct
   locked-distance chase camera translation, rearward/upward seated cockpit
@@ -508,7 +510,7 @@ skybox-backed environment lighting/reflections, removed exhaust flame/heat
 shimmer effects, the MoTeC-style HUD pass, the R-1 render-performance
 shadow-map recovery pass, the R-2 MSAA recovery pass, the R-3 bloom-chain
 simplification pass, the R-4 HUD glass tap-count reduction, and the R-5
-shadow-update interval pass:
+shadow-update interval pass, and the R-6 half-precision bloom shader pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -561,6 +563,9 @@ shadow-update interval pass:
 - after the R-5 cached shadow-map update interval defaulting to every other
   frame, the benchmark exited with: `FPS 48.2`, `FRAME 20.73 ms`,
   `PHYS 0.035 ms`, `RENDER 20.27 ms`, and `PHYS_STEPS 358.5/s`.
+- after the R-6 half-precision bloom shader change, the benchmark exited with:
+  `FPS 49.5`, `FRAME 20.21 ms`, `PHYS 0.034 ms`, `RENDER 19.78 ms`, and
+  `PHYS_STEPS 358.4/s`.
 - the self-contained Release app was approximately 11 MB, under the current
   100 MB app/asset budget
 - the full asset folder was approximately 8.3 MB; generated OBJ meshes were
@@ -581,7 +586,7 @@ Not verified:
   text display, high-resolution mipmapped PBR textures, skybox reflections,
   Cook-Torrance highlights, material occlusion/contact-shadow grounding,
   ground-aware clearcoat reflection, revised sky/material/post grade, retuned
-  two-level bloom, 2x default MSAA edges, 2048 local soft shadows,
+  half-precision two-level bloom, 2x default MSAA edges, 2048 local soft shadows,
   MoTeC HUD frosted glass,
   removed exhaust flame/heat shimmer effects, soft smoke/dust/sparks, and
   skidmark path on a physical display
