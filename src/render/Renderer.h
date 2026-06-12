@@ -19,6 +19,7 @@ public:
         bool vsync,
         float renderScale,
         int shadowMapSize,
+        int msaaSamples,
         const Track& track) = 0;
     virtual void shutdown() = 0;
     virtual bool render(const RenderScene& scene, const DebugOverlay& overlay) = 0;

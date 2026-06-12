@@ -79,7 +79,6 @@ constexpr std::size_t kMaxUiVertices = 7200U;
 constexpr std::size_t kMaxSmokeVertices = 144U;
 constexpr std::size_t kMaxSuspensionVertices = 900U;
 constexpr std::size_t kMaxSkidmarkVertices = 3072U;
-constexpr NSUInteger kWorldSampleCount = 4U;
 using Glyph = std::array<unsigned char, 7>;
 
 Glyph glyphFor(char character) {
@@ -1885,6 +1884,7 @@ struct MetalRenderer::Impl {
     int drawableHeight = 0;
     float renderScale = 1.0F;
     int shadowMapSize = 2048;
+    NSUInteger worldSampleCount = 2U;
     float elapsedSeconds = 0.0F;
     float cameraTrauma = 0.0F;
     bool cameraInitialized = false;
@@ -1919,7 +1919,7 @@ struct MetalRenderer::Impl {
         skyDescriptor.fragmentFunction = skyFragment;
         skyDescriptor.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
         skyDescriptor.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-        skyDescriptor.rasterSampleCount = kWorldSampleCount;
+        skyDescriptor.rasterSampleCount = worldSampleCount;
         NSError* pipelineError = nil;
         skyPipeline = [device newRenderPipelineStateWithDescriptor:skyDescriptor error:&pipelineError];
         if (skyPipeline == nil) {
@@ -1932,7 +1932,7 @@ struct MetalRenderer::Impl {
         worldDescriptor.fragmentFunction = worldFragment;
         worldDescriptor.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
         worldDescriptor.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-        worldDescriptor.rasterSampleCount = kWorldSampleCount;
+        worldDescriptor.rasterSampleCount = worldSampleCount;
         worldPipeline = [device newRenderPipelineStateWithDescriptor:worldDescriptor error:&pipelineError];
         if (worldPipeline == nil) {
             error = pipelineError != nil ? pipelineError.localizedDescription.UTF8String : "Could not create world pipeline";
@@ -1944,7 +1944,7 @@ struct MetalRenderer::Impl {
         fxDescriptor.fragmentFunction = worldFragment;
         fxDescriptor.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
         fxDescriptor.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-        fxDescriptor.rasterSampleCount = kWorldSampleCount;
+        fxDescriptor.rasterSampleCount = worldSampleCount;
         fxDescriptor.colorAttachments[0].blendingEnabled = YES;
         fxDescriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
         fxDescriptor.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
@@ -1993,7 +1993,7 @@ struct MetalRenderer::Impl {
         worldTextDescriptor.fragmentFunction = textFragment;
         worldTextDescriptor.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
         worldTextDescriptor.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-        worldTextDescriptor.rasterSampleCount = kWorldSampleCount;
+        worldTextDescriptor.rasterSampleCount = worldSampleCount;
         worldTextDescriptor.colorAttachments[0].blendingEnabled = YES;
         worldTextDescriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
         worldTextDescriptor.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
@@ -2329,9 +2329,10 @@ struct MetalRenderer::Impl {
                                                               height:height
                                                            mipmapped:NO];
         msaaDepthDescriptor.textureType = MTLTextureType2DMultisample;
-        msaaDepthDescriptor.sampleCount = kWorldSampleCount;
+        msaaDepthDescriptor.sampleCount = worldSampleCount;
         msaaDepthDescriptor.usage = MTLTextureUsageRenderTarget;
-        msaaDepthDescriptor.storageMode = MTLStorageModePrivate;
+        msaaDepthDescriptor.storageMode =
+            device.hasUnifiedMemory ? MTLStorageModeMemoryless : MTLStorageModePrivate;
         msaaDepthTexture = [device newTextureWithDescriptor:msaaDepthDescriptor];
 
         MTLTextureDescriptor* hdrDescriptor =
@@ -2349,9 +2350,10 @@ struct MetalRenderer::Impl {
                                                               height:height
                                                            mipmapped:NO];
         msaaHdrDescriptor.textureType = MTLTextureType2DMultisample;
-        msaaHdrDescriptor.sampleCount = kWorldSampleCount;
+        msaaHdrDescriptor.sampleCount = worldSampleCount;
         msaaHdrDescriptor.usage = MTLTextureUsageRenderTarget;
-        msaaHdrDescriptor.storageMode = MTLStorageModePrivate;
+        msaaHdrDescriptor.storageMode =
+            device.hasUnifiedMemory ? MTLStorageModeMemoryless : MTLStorageModePrivate;
         msaaHdrTexture = [device newTextureWithDescriptor:msaaHdrDescriptor];
 
         MTLTextureDescriptor* bloomDescriptor =
@@ -3004,6 +3006,7 @@ bool MetalRenderer::initialize(
     bool vsync,
     float renderScale,
     int shadowMapSize,
+    int msaaSamples,
     const Track& track) {
     impl_->metalView = SDL_Metal_CreateView(window.nativeHandle());
     if (impl_->metalView == nullptr) {
@@ -3023,6 +3026,7 @@ bool MetalRenderer::initialize(
     impl_->layer.displaySyncEnabled = vsync;
     impl_->renderScale = std::clamp(renderScale, 0.5F, 1.0F);
     impl_->shadowMapSize = std::clamp(shadowMapSize, 1024, 4096);
+    impl_->worldSampleCount = msaaSamples <= 2 ? 2U : 4U;
     impl_->commandQueue = [impl_->device newCommandQueue];
     impl_->passDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
     impl_->bloomPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];

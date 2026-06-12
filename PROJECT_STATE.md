@@ -39,8 +39,9 @@ locked-distance chase camera framing, center-protected high-speed post blur,
 launch wheelspin-aware automatic shifting, a geometric 9500-RPM-drop speedway
 gear stack with shift cooldown, stateful tire temperature/thermal-grip
 telemetry, generated high-resolution PBR material maps, a generated skybox used
-for environment lighting/reflections, a modern MoTeC-style racing HUD, and 4x
-MSAA scene rendering with a configurable 2048x2048 default sun shadow map.
+for environment lighting/reflections, a modern MoTeC-style racing HUD,
+configurable 2x default MSAA scene rendering, and a configurable 2048x2048
+default sun shadow map.
 
 The current app can:
 
@@ -98,8 +99,9 @@ The current app can:
   scene, focused to roughly an 80 m region around the player car, then apply
   Poisson-disk PCF-filtered dynamic shadows in the world shader for the car,
   wheels, dynamic suspension rods, fencing, walls, and grandstand geometry
-- render the scene through 4x multisampled RGBA16Float HDR color and depth
-  targets, resolve the smoothed scene into the single-sample HDR texture,
+- render the scene through configurable 2x default multisampled RGBA16Float HDR
+  color and depth targets, resolve the smoothed scene into the single-sample HDR
+  texture,
   extract bright highlights through half-, quarter-, and eighth-resolution
   bloom targets, and composite the mip-chain bloom plus a reduced,
   center-protected speed-weighted radial motion-blur approximation in a final
@@ -328,7 +330,7 @@ The current app can:
 11. Metal renders a sun shadow depth pass for world/player geometry.
 12. Metal renders the skybox-backed sky, oval, player vehicle body, dynamic
     suspension rods, unsprung wheels, ghost vehicle if available, skidmarks,
-    and soft smoke/dust/spark particles into 4x multisampled
+    and soft smoke/dust/spark particles into configurable 2x default multisampled
     RGBA16Float HDR/depth targets, then resolves color into the single-sample
     HDR texture.
 13. Metal extracts bright pixels through half-, quarter-, and
@@ -373,7 +375,8 @@ Physics behavior is not tied to the render frame rate.
   header-only OBJ loading, generated high-detail OBJ car/wheel/steering meshes,
   generated mipmapped WebP PBR material maps, generated skybox/smoke maps,
   procedural track/fence/grandstand/HUD geometry, split car-body/wheel
-  rendering, 4x MSAA HDR scene rendering, material-tagged HDR filmic
+  rendering, configurable 2x default MSAA HDR scene rendering,
+  material-tagged HDR filmic
   Cook-Torrance lighting, track-lateral asphalt marking shader, tangent-space
   normal mapping, roughness/height map sampling, pearl-metallic clearcoat,
   carbon/tire micro-detail, skybox-backed clearcoat environment reflection,
@@ -416,9 +419,9 @@ scheme for `LightweightSim` when the Xcode generator is available.
 ## Configuration
 
 - `config/graphics_default.json`: window, fullscreen, vsync, render scale,
-  shadow map size, and physics timing; the default physics tick is 360 Hz for
-  the stiff IR-18-style spring/unsprung-mass setup and the default shadow map
-  size is 2048
+  MSAA sample count, shadow map size, and physics timing; the default physics
+  tick is 360 Hz for the stiff IR-18-style spring/unsprung-mass setup, the
+  default MSAA sample count is 2, and the default shadow map size is 2048
 - `config/input_default.json`: keyboard response, provisional wheel mapping,
   camera-toggle button, pedal inversion, deadzones, wheel steering sensitivity,
   and wheel/pedal gamma curves; the default keyboard steering rates are
@@ -495,8 +498,8 @@ cooldown, strict `automatic_transmission` config/menu control, smooth
 manual-mode RPM limiter bounce, force-at-corner rigid-body yaw integration,
 tire temperature/thermal-grip telemetry, generated PBR texture maps,
 skybox-backed environment lighting/reflections, removed exhaust flame/heat
-shimmer effects, the MoTeC-style HUD pass, and the R-1 render-performance
-shadow-map recovery pass:
+shimmer effects, the MoTeC-style HUD pass, the R-1 render-performance
+shadow-map recovery pass, and the R-2 MSAA recovery pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -533,6 +536,10 @@ shadow-map recovery pass:
   benchmark (`FPS 42.6`, `RENDER 22.62 ms`), indicating that the shadow pass
   is probably not the dominant render cost on this machine without further
   Metal Frame Debugger confirmation.
+- after the R-2 configurable 2x MSAA and memoryless MSAA target change,
+  `SIM_BENCHMARK_SECONDS=8 ./build/LightweightSim.app/Contents/MacOS/LightweightSim`
+  exited with: `FPS 48.1`, `FRAME 20.79 ms`, `PHYS 0.036 ms`,
+  `RENDER 20.17 ms`, and `PHYS_STEPS 357.8/s`.
 - the self-contained Release app was approximately 11 MB, under the current
   100 MB app/asset budget
 - the full asset folder was approximately 8.3 MB; generated OBJ meshes were
@@ -553,7 +560,7 @@ Not verified:
   text display, high-resolution mipmapped PBR textures, skybox reflections,
   Cook-Torrance highlights, material occlusion/contact-shadow grounding,
   ground-aware clearcoat reflection, revised sky/material/post grade, retuned
-  mip-chain bloom, 4x MSAA edges, 2048 local soft shadows,
+  mip-chain bloom, 2x default MSAA edges, 2048 local soft shadows,
   MoTeC HUD frosted glass,
   removed exhaust flame/heat shimmer effects, soft smoke/dust/sparks, and
   skidmark path on a physical display

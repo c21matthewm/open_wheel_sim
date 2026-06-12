@@ -15,6 +15,7 @@ struct GraphicsConfig {
     bool vsync = true;
     float renderScale = 1.0F;
     int shadowMapSize = 2048;
+    int msaaSamples = 2;
     int physicsHz = 360;
     float maxFrameDelta = 0.1F;
 

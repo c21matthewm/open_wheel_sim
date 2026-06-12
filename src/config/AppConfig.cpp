@@ -15,6 +15,8 @@ void GraphicsConfig::load(const ConfigFile& config) {
     vsync = config.getBool("render.vsync", vsync);
     renderScale = std::clamp(config.getFloat("render.scale", renderScale), 0.5F, 1.0F);
     shadowMapSize = std::clamp(config.getInt("render.shadow_map_size", shadowMapSize), 1024, 4096);
+    const int requestedMsaaSamples = config.getInt("render.msaa_samples", msaaSamples);
+    msaaSamples = requestedMsaaSamples <= 2 ? 2 : 4;
     physicsHz = std::clamp(config.getInt("simulation.physics_hz", physicsHz), 30, 720);
     maxFrameDelta =
         std::clamp(config.getFloat("simulation.max_frame_delta", maxFrameDelta), 0.02F, 0.5F);

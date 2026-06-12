@@ -9,7 +9,8 @@
   "render": {
     "vsync": true,
     "scale": 1.0,
-    "shadow_map_size": 2048
+    "shadow_map_size": 2048,
+    "msaa_samples": 2
   },
   "simulation": {
     "physics_hz": 360,
