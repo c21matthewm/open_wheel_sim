@@ -240,6 +240,7 @@ bool App::initialize() {
             graphicsConfig_.vsync,
             graphicsConfig_.renderScale,
             graphicsConfig_.shadowMapSize,
+            graphicsConfig_.shadowUpdateInterval,
             graphicsConfig_.msaaSamples,
             raceSession_->track())) {
         std::fprintf(stderr, "Renderer initialization failed: %s\n", renderer_.error().c_str());

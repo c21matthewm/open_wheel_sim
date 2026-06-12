@@ -19,6 +19,7 @@ public:
         bool vsync,
         float renderScale,
         int shadowMapSize,
+        int shadowUpdateInterval,
         int msaaSamples,
         const Track& track) = 0;
     virtual void shutdown() = 0;

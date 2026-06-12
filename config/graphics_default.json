@@ -10,6 +10,7 @@
     "vsync": true,
     "scale": 1.0,
     "shadow_map_size": 2048,
+    "shadow_update_interval": 2,
     "msaa_samples": 2
   },
   "simulation": {

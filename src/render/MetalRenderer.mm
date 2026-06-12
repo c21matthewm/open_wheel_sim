@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 #include <numbers>
 #include <string>
@@ -1878,13 +1879,17 @@ struct MetalRenderer::Impl {
     int drawableHeight = 0;
     float renderScale = 1.0F;
     int shadowMapSize = 2048;
+    int shadowUpdateInterval = 2;
     NSUInteger worldSampleCount = 2U;
+    std::uint64_t shadowFrameCounter = 0;
     float elapsedSeconds = 0.0F;
     float cameraTrauma = 0.0F;
     bool cameraInitialized = false;
+    bool hasValidShadowMap = false;
     Uint64 previousRenderTicks = 0;
     Vec3 cameraEye{};
     Vec3 cameraTarget{};
+    Mat4 cachedShadowViewProjection = Mat4::identity();
     int previousCameraMode = -1;
     Vec3 lastSkidmarkPosition{};
     bool hasLastSkidmark = false;
@@ -2991,6 +2996,7 @@ bool MetalRenderer::initialize(
     bool vsync,
     float renderScale,
     int shadowMapSize,
+    int shadowUpdateInterval,
     int msaaSamples,
     const Track& track) {
     impl_->metalView = SDL_Metal_CreateView(window.nativeHandle());
@@ -3011,7 +3017,11 @@ bool MetalRenderer::initialize(
     impl_->layer.displaySyncEnabled = vsync;
     impl_->renderScale = std::clamp(renderScale, 0.5F, 1.0F);
     impl_->shadowMapSize = std::clamp(shadowMapSize, 1024, 4096);
+    impl_->shadowUpdateInterval = std::clamp(shadowUpdateInterval, 1, 3);
     impl_->worldSampleCount = msaaSamples <= 2 ? 2U : 4U;
+    impl_->shadowFrameCounter = 0;
+    impl_->hasValidShadowMap = false;
+    impl_->cachedShadowViewProjection = Mat4::identity();
     impl_->commandQueue = [impl_->device newCommandQueue];
     impl_->passDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
     impl_->bloomPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -3313,7 +3323,16 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
             kShadowFrustumExtentM,
             0.1F,
             260.0F);
-        const Mat4 shadowViewProjection = multiply(lightProjection, lightView);
+        const Mat4 candidateShadowViewProjection = multiply(lightProjection, lightView);
+        ++impl_->shadowFrameCounter;
+        const bool shouldUpdateShadow =
+            !impl_->hasValidShadowMap ||
+            impl_->shadowUpdateInterval <= 1 ||
+            (impl_->shadowFrameCounter % static_cast<std::uint64_t>(impl_->shadowUpdateInterval)) == 0;
+        if (shouldUpdateShadow) {
+            impl_->cachedShadowViewProjection = candidateShadowViewProjection;
+        }
+        const Mat4 shadowViewProjection = impl_->cachedShadowViewProjection;
 
         const std::size_t suspensionVertexCount =
             impl_->buildSuspensionVertices(scene, vehicleFrameWorld, chassisWorld);
@@ -3338,52 +3357,55 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
                 scale(widthScale, radiusScale * (1.0F - compression), radiusScale * (1.0F + compression * 0.16F)));
         };
 
-        impl_->shadowPassDescriptor.depthAttachment.texture = impl_->shadowDepthTexture;
-        impl_->shadowPassDescriptor.depthAttachment.loadAction = MTLLoadActionClear;
-        impl_->shadowPassDescriptor.depthAttachment.storeAction = MTLStoreActionStore;
-        impl_->shadowPassDescriptor.depthAttachment.clearDepth = 1.0;
-        id<MTLRenderCommandEncoder> shadowEncoder =
-            [commandBuffer renderCommandEncoderWithDescriptor:impl_->shadowPassDescriptor];
-        if (shadowEncoder == nil) {
-            impl_->error = "Could not create Metal shadow encoder";
-            return false;
+        if (shouldUpdateShadow) {
+            impl_->shadowPassDescriptor.depthAttachment.texture = impl_->shadowDepthTexture;
+            impl_->shadowPassDescriptor.depthAttachment.loadAction = MTLLoadActionClear;
+            impl_->shadowPassDescriptor.depthAttachment.storeAction = MTLStoreActionStore;
+            impl_->shadowPassDescriptor.depthAttachment.clearDepth = 1.0;
+            id<MTLRenderCommandEncoder> shadowEncoder =
+                [commandBuffer renderCommandEncoderWithDescriptor:impl_->shadowPassDescriptor];
+            if (shadowEncoder == nil) {
+                impl_->error = "Could not create Metal shadow encoder";
+                return false;
+            }
+            const double shadowViewportSize = static_cast<double>(impl_->shadowMapSize);
+            [shadowEncoder setViewport:MTLViewport{0.0, 0.0, shadowViewportSize, shadowViewportSize, 0.0, 1.0}];
+            [shadowEncoder setRenderPipelineState:impl_->shadowPipeline];
+            [shadowEncoder setDepthStencilState:impl_->shadowDepthState];
+            const auto drawShadowMesh = [&](id<MTLBuffer> buffer, NSUInteger vertexCount, const Mat4& model) {
+                Uniforms shadowUniforms = uniforms;
+                const Mat4 shadowMvp = multiply(shadowViewProjection, model);
+                copyUniforms(shadowUniforms, shadowMvp, model, shadowMvp, lightEye);
+                [shadowEncoder setVertexBuffer:buffer offset:0 atIndex:0];
+                [shadowEncoder setVertexBytes:&shadowUniforms length:sizeof(shadowUniforms) atIndex:1];
+                [shadowEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertexCount];
+            };
+            drawShadowMesh(impl_->groundBuffer, impl_->groundVertexCount, identity);
+            drawShadowMesh(impl_->carBodyBuffer, impl_->carBodyVertexCount, carWorld);
+            drawShadowMesh(impl_->steeringWheelBuffer, impl_->steeringWheelVertexCount, steeringWheelWorld);
+            if (suspensionVertexCount > 0) {
+                drawShadowMesh(impl_->suspensionBuffer, static_cast<NSUInteger>(suspensionVertexCount), identity);
+            }
+            const auto drawShadowWheel = [&](
+                                             float localX,
+                                             float localY,
+                                             float localZ,
+                                             bool frontWheel,
+                                             float normalLoadN,
+                                             float wheelRotationRadians,
+                                             float hubTravelM) {
+                drawShadowMesh(
+                    impl_->wheelBuffer,
+                    impl_->wheelVertexCount,
+                    multiply(vehicleFrameWorld, wheelLocalTransform(localX, localY, localZ, frontWheel, normalLoadN, wheelRotationRadians, hubTravelM)));
+            };
+            drawShadowWheel(-kVisualFrontWheelX, kVisualWheelY, kVisualFrontWheelZ, true, scene.vehicle.frontLeftNormalLoadN, scene.vehicle.frontLeftWheelRotationRadians, scene.vehicle.frontLeftWheelHubTravelM);
+            drawShadowWheel(kVisualFrontWheelX, kVisualWheelY, kVisualFrontWheelZ, true, scene.vehicle.frontRightNormalLoadN, scene.vehicle.frontRightWheelRotationRadians, scene.vehicle.frontRightWheelHubTravelM);
+            drawShadowWheel(-kVisualRearWheelX, kVisualWheelY, kVisualRearWheelZ, false, scene.vehicle.rearLeftNormalLoadN, scene.vehicle.rearLeftWheelRotationRadians, scene.vehicle.rearLeftWheelHubTravelM);
+            drawShadowWheel(kVisualRearWheelX, kVisualWheelY, kVisualRearWheelZ, false, scene.vehicle.rearRightNormalLoadN, scene.vehicle.rearRightWheelRotationRadians, scene.vehicle.rearRightWheelHubTravelM);
+            [shadowEncoder endEncoding];
+            impl_->hasValidShadowMap = true;
         }
-        const double shadowViewportSize = static_cast<double>(impl_->shadowMapSize);
-        [shadowEncoder setViewport:MTLViewport{0.0, 0.0, shadowViewportSize, shadowViewportSize, 0.0, 1.0}];
-        [shadowEncoder setRenderPipelineState:impl_->shadowPipeline];
-        [shadowEncoder setDepthStencilState:impl_->shadowDepthState];
-        const auto drawShadowMesh = [&](id<MTLBuffer> buffer, NSUInteger vertexCount, const Mat4& model) {
-            Uniforms shadowUniforms = uniforms;
-            const Mat4 shadowMvp = multiply(shadowViewProjection, model);
-            copyUniforms(shadowUniforms, shadowMvp, model, shadowMvp, lightEye);
-            [shadowEncoder setVertexBuffer:buffer offset:0 atIndex:0];
-            [shadowEncoder setVertexBytes:&shadowUniforms length:sizeof(shadowUniforms) atIndex:1];
-            [shadowEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertexCount];
-        };
-        drawShadowMesh(impl_->groundBuffer, impl_->groundVertexCount, identity);
-        drawShadowMesh(impl_->carBodyBuffer, impl_->carBodyVertexCount, carWorld);
-        drawShadowMesh(impl_->steeringWheelBuffer, impl_->steeringWheelVertexCount, steeringWheelWorld);
-        if (suspensionVertexCount > 0) {
-            drawShadowMesh(impl_->suspensionBuffer, static_cast<NSUInteger>(suspensionVertexCount), identity);
-        }
-        const auto drawShadowWheel = [&](
-                                         float localX,
-                                         float localY,
-                                         float localZ,
-                                         bool frontWheel,
-                                         float normalLoadN,
-                                         float wheelRotationRadians,
-                                         float hubTravelM) {
-            drawShadowMesh(
-                impl_->wheelBuffer,
-                impl_->wheelVertexCount,
-                multiply(vehicleFrameWorld, wheelLocalTransform(localX, localY, localZ, frontWheel, normalLoadN, wheelRotationRadians, hubTravelM)));
-        };
-        drawShadowWheel(-kVisualFrontWheelX, kVisualWheelY, kVisualFrontWheelZ, true, scene.vehicle.frontLeftNormalLoadN, scene.vehicle.frontLeftWheelRotationRadians, scene.vehicle.frontLeftWheelHubTravelM);
-        drawShadowWheel(kVisualFrontWheelX, kVisualWheelY, kVisualFrontWheelZ, true, scene.vehicle.frontRightNormalLoadN, scene.vehicle.frontRightWheelRotationRadians, scene.vehicle.frontRightWheelHubTravelM);
-        drawShadowWheel(-kVisualRearWheelX, kVisualWheelY, kVisualRearWheelZ, false, scene.vehicle.rearLeftNormalLoadN, scene.vehicle.rearLeftWheelRotationRadians, scene.vehicle.rearLeftWheelHubTravelM);
-        drawShadowWheel(kVisualRearWheelX, kVisualWheelY, kVisualRearWheelZ, false, scene.vehicle.rearRightNormalLoadN, scene.vehicle.rearRightWheelRotationRadians, scene.vehicle.rearRightWheelHubTravelM);
-        [shadowEncoder endEncoding];
 
         impl_->passDescriptor.colorAttachments[0].texture = impl_->msaaHdrTexture;
         impl_->passDescriptor.colorAttachments[0].resolveTexture = impl_->hdrTexture;

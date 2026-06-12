@@ -95,10 +95,12 @@ The current app can:
   PCF, refined bloom weighting, subtle HDR sharpening, and screen-edge
   vignette/chromatic lens grading; and a skybox-backed generated sky pass with
   sun glow, richer horizon color, cirrus, and procedural drifting clouds
-- render a configurable 2048x2048 default sun shadow-map pass before the main
-  scene, focused to roughly an 80 m region around the player car, then apply
-  Poisson-disk PCF-filtered dynamic shadows in the world shader for the car,
-  wheels, dynamic suspension rods, fencing, walls, and grandstand geometry
+- render a configurable 2048x2048 default sun shadow-map pass on a configurable
+  interval that defaults to every other frame, focused to roughly an 80 m
+  region around the player car, then apply Poisson-disk PCF-filtered dynamic
+  shadows in the world shader for the car, wheels, dynamic suspension rods,
+  fencing, walls, and grandstand geometry using the cached matching light
+  matrix on skipped update frames
 - render the scene through configurable 2x default multisampled RGBA16Float HDR
   color and depth targets, resolve the smoothed scene into the single-sample HDR
   texture,
@@ -240,8 +242,9 @@ The current app can:
 - Shadow mapping is implemented as a single sun-focused orthographic shadow map
   centered near the player car. It is intended for local car/fence/grandstand
   grounding, not full-track long-distance shadow coverage. The default
-  2048x2048 map uses a tightened roughly 80 m local frustum and broadened
-  Poisson-disk filtering; target TV/display verification is still useful.
+  2048x2048 map uses a tightened roughly 80 m local frustum, broadened
+  Poisson-disk filtering, and a default every-other-frame update cadence with a
+  cached light matrix; target TV/display verification is still useful.
 - Bloom now uses a lightweight two-level downsample chain with half- and
   quarter-resolution targets, but it is still simpler than a large-radius
   production bloom pyramid. Motion blur remains a screen-space radial
@@ -328,7 +331,9 @@ The current app can:
     wheel hub travel/rotation/deformation, dynamic suspension rods, sky time,
     bottoming sparks, and session-local skidmark geometry when rear tire slip
     is high.
-11. Metal renders a sun shadow depth pass for world/player geometry.
+11. Metal updates the sun shadow depth pass for world/player geometry on the
+    configured interval and reuses the cached shadow map/matrix on skipped
+    frames.
 12. Metal renders the skybox-backed sky, oval, player vehicle body, dynamic
     suspension rods, unsprung wheels, ghost vehicle if available, skidmarks,
     and soft smoke/dust/spark particles into configurable 2x default multisampled
@@ -420,9 +425,10 @@ scheme for `LightweightSim` when the Xcode generator is available.
 ## Configuration
 
 - `config/graphics_default.json`: window, fullscreen, vsync, render scale,
-  MSAA sample count, shadow map size, and physics timing; the default physics
-  tick is 360 Hz for the stiff IR-18-style spring/unsprung-mass setup, the
-  default MSAA sample count is 2, and the default shadow map size is 2048
+  MSAA sample count, shadow map size, shadow update interval, and physics
+  timing; the default physics tick is 360 Hz for the stiff IR-18-style
+  spring/unsprung-mass setup, the default MSAA sample count is 2, the default
+  shadow map size is 2048, and the default shadow update interval is 2 frames
 - `config/input_default.json`: keyboard response, provisional wheel mapping,
   camera-toggle button, pedal inversion, deadzones, wheel steering sensitivity,
   and wheel/pedal gamma curves; the default keyboard steering rates are
@@ -500,8 +506,9 @@ manual-mode RPM limiter bounce, force-at-corner rigid-body yaw integration,
 tire temperature/thermal-grip telemetry, generated PBR texture maps,
 skybox-backed environment lighting/reflections, removed exhaust flame/heat
 shimmer effects, the MoTeC-style HUD pass, the R-1 render-performance
-shadow-map recovery pass, the R-2 MSAA recovery pass, and the R-3 bloom-chain
-simplification pass, and the R-4 HUD glass tap-count reduction:
+shadow-map recovery pass, the R-2 MSAA recovery pass, the R-3 bloom-chain
+simplification pass, the R-4 HUD glass tap-count reduction, and the R-5
+shadow-update interval pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -551,6 +558,9 @@ simplification pass, and the R-4 HUD glass tap-count reduction:
   `PHYS 0.036-0.037 ms`, `RENDER 21.26-21.02 ms`, and
   `PHYS_STEPS 358.4-358.5/s`, indicating the HUD tap reduction did not produce
   a measurable frame-time win in this run.
+- after the R-5 cached shadow-map update interval defaulting to every other
+  frame, the benchmark exited with: `FPS 48.2`, `FRAME 20.73 ms`,
+  `PHYS 0.035 ms`, `RENDER 20.27 ms`, and `PHYS_STEPS 358.5/s`.
 - the self-contained Release app was approximately 11 MB, under the current
   100 MB app/asset budget
 - the full asset folder was approximately 8.3 MB; generated OBJ meshes were

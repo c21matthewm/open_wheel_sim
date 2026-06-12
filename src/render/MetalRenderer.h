@@ -17,6 +17,7 @@ public:
         bool vsync,
         float renderScale,
         int shadowMapSize,
+        int shadowUpdateInterval,
         int msaaSamples,
         const Track& track) override;
     void shutdown() override;
