@@ -1696,17 +1696,15 @@ const char* shaderSource() {
             sampler linearSampler [[sampler(0)]]) {
             const float2 uv = clamp(input.position.xy / max(uniforms.renderParams.xy, float2(1.0)), 0.0, 1.0);
             const float2 texel = 1.0 / max(uniforms.renderParams.xy, float2(1.0));
-            float3 blurred = float3(0.0);
-            float weight = 0.0;
-            for (int y = -2; y <= 2; ++y) {
-                for (int x = -2; x <= 2; ++x) {
-                    const float2 offset = float2(x, y) * texel * 5.5;
-                    const float tapWeight = 1.0 / (1.0 + length(float2(x, y)));
-                    blurred += hdrTexture.sample(linearSampler, clamp(uv + offset, 0.0, 1.0)).rgb * tapWeight;
-                    weight += tapWeight;
-                }
-            }
-            blurred /= max(weight, 0.001);
+            const float2 blurRadius = texel * 8.0;
+            const float3 blurred =
+                hdrTexture.sample(linearSampler, uv).rgb * 0.28 +
+                hdrTexture.sample(linearSampler, clamp(uv + float2( blurRadius.x, 0.0), 0.0, 1.0)).rgb * 0.14 +
+                hdrTexture.sample(linearSampler, clamp(uv + float2(-blurRadius.x, 0.0), 0.0, 1.0)).rgb * 0.14 +
+                hdrTexture.sample(linearSampler, clamp(uv + float2(0.0,  blurRadius.y), 0.0, 1.0)).rgb * 0.14 +
+                hdrTexture.sample(linearSampler, clamp(uv + float2(0.0, -blurRadius.y), 0.0, 1.0)).rgb * 0.14 +
+                hdrTexture.sample(linearSampler, clamp(uv + blurRadius * float2( 0.72,  0.72), 0.0, 1.0)).rgb * 0.08 +
+                hdrTexture.sample(linearSampler, clamp(uv + blurRadius * float2(-0.72, -0.72), 0.0, 1.0)).rgb * 0.08;
             const float2 refractNoise = float2(
                 noise21(uv * float2(220.0, 157.0) + uniforms.renderParams.z * 0.12),
                 noise21(uv * float2(141.0, 263.0) - uniforms.renderParams.z * 0.10)) - 0.5;

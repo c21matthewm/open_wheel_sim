@@ -166,8 +166,9 @@ The current app can:
   translucent panels, glow accents, prominent digital MPH/gear/RPM text,
   brake/throttle bars, tire temperature/usage widgets, dynamic LED shift
   lights, a curved segmented RPM sweep, generated SDF text for sharper
-  HUD/debug rendering, and a HUD shader that samples and blurs the resolved HDR
-  scene behind the panels for a frosted refractive glass effect
+  HUD/debug rendering, and a HUD shader that samples the resolved HDR scene
+  behind the panels with a compact 7-tap blur for a frosted refractive glass
+  effect
 - synthesize lightweight SDL3 audio at runtime with a high-revving procedural
   combustion engine layer that combines V6 firing-rate pulse shaping, multiple
   harmonic orders, smoothed RPM/throttle response, turbo whistle/hiss,
@@ -246,7 +247,7 @@ The current app can:
   production bloom pyramid. Motion blur remains a screen-space radial
   approximation rather than a true per-pixel velocity-buffer pass.
 - HUD glass samples and blurs the resolved HDR scene buffer behind the UI
-  panels, but the blur is a compact fixed-tap shader pass rather than a
+  panels, but the blur is a compact 7-tap shader pass rather than a
   large-radius production separable blur or full optical glass model.
 - The current tire model uses relaxation length for lateral slip, dynamic slip
   ratio for longitudinal force, a compact Pacejka-lite peak/falloff curve,
@@ -500,7 +501,7 @@ tire temperature/thermal-grip telemetry, generated PBR texture maps,
 skybox-backed environment lighting/reflections, removed exhaust flame/heat
 shimmer effects, the MoTeC-style HUD pass, the R-1 render-performance
 shadow-map recovery pass, the R-2 MSAA recovery pass, and the R-3 bloom-chain
-simplification pass:
+simplification pass, and the R-4 HUD glass tap-count reduction:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -545,6 +546,11 @@ simplification pass:
   exited with: `FPS 47.9`, `FRAME 20.89 ms`, `PHYS 0.034 ms`,
   `RENDER 20.46 ms`, and `PHYS_STEPS 359.1/s`, indicating no measurable gain
   from that pass removal on this run.
+- after the R-4 HUD glass blur reduction from 25 blur taps to 7 blur taps,
+  repeated benchmark samples exited with `FPS 45.9-46.5`, `FRAME 21.79-21.51 ms`,
+  `PHYS 0.036-0.037 ms`, `RENDER 21.26-21.02 ms`, and
+  `PHYS_STEPS 358.4-358.5/s`, indicating the HUD tap reduction did not produce
+  a measurable frame-time win in this run.
 - the self-contained Release app was approximately 11 MB, under the current
   100 MB app/asset budget
 - the full asset folder was approximately 8.3 MB; generated OBJ meshes were
