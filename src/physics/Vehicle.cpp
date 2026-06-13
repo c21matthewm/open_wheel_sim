@@ -249,6 +249,8 @@ WheelForce resolveWheelForce(
     float relaxedSlipAngleRadians,
     float wheelOmegaRadPerSec,
     float wheelRadiusM,
+    float camberAngleRadians,
+    float camberStiffnessNPerRad,
     float corneringStiffness,
     float longitudinalStiffness,
     float normalLoadN,
@@ -288,7 +290,9 @@ WheelForce resolveWheelForce(
             lateralPeakSlipAngleRadians,
             tireCurveShapeFactor,
             tireCurveCurvatureFactor,
-            tirePostPeakFalloff);
+            tirePostPeakFalloff) +
+        camberStiffnessNPerRad * camberAngleRadians *
+            (normalLoadN / std::max(1.0F, referenceLoadN));
     const float wheelSurfaceSpeed = wheelOmegaRadPerSec * wheelRadiusM;
     const float slipDenominator =
         std::max({std::abs(tireLongitudinalSpeed), std::abs(wheelSurfaceSpeed), 2.0F});
@@ -820,6 +824,11 @@ void Vehicle::step(
     const float frontWheelStiffness = config_.frontCorneringStiffness * 0.5F;
     const float rearWheelStiffness = config_.rearCorneringStiffness * 0.5F;
     const float tireLoadReferenceN = std::max(1.0F, config_.tireLoadReferenceNormalN);
+    const auto effectiveCamberForWheel = [&](std::size_t wheel) {
+        const float setupCamber =
+            corners[wheel].front ? config_.camberAngleFrontRadians : config_.camberAngleRearRadians;
+        return (corners[wheel].x < 0.0F ? -setupCamber : setupCamber);
+    };
 
     const WheelForce frontLeft = resolveWheelForce(
         bodyLongitudinalSpeed[kFrontLeft],
@@ -828,6 +837,8 @@ void Vehicle::step(
         relaxedSlip[kFrontLeft],
         wheelOmega[kFrontLeft],
         config_.wheelRadiusM,
+        effectiveCamberForWheel(kFrontLeft),
+        config_.tireCamberStiffnessNPerRad,
         frontWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kFrontLeft],
@@ -848,6 +859,8 @@ void Vehicle::step(
         relaxedSlip[kFrontRight],
         wheelOmega[kFrontRight],
         config_.wheelRadiusM,
+        effectiveCamberForWheel(kFrontRight),
+        config_.tireCamberStiffnessNPerRad,
         frontWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kFrontRight],
@@ -868,6 +881,8 @@ void Vehicle::step(
         relaxedSlip[kRearLeft],
         wheelOmega[kRearLeft],
         config_.wheelRadiusM,
+        effectiveCamberForWheel(kRearLeft),
+        config_.tireCamberStiffnessNPerRad,
         rearWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearLeft],
@@ -888,6 +903,8 @@ void Vehicle::step(
         relaxedSlip[kRearRight],
         wheelOmega[kRearRight],
         config_.wheelRadiusM,
+        effectiveCamberForWheel(kRearRight),
+        config_.tireCamberStiffnessNPerRad,
         rearWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearRight],
@@ -1327,6 +1344,8 @@ void Vehicle::setAeroPreset(int preset) {
         config_.frontDownforceFraction = 0.43F;
         config_.maxGroundEffectMultiplier = 2.90F;
         config_.groundEffectRideHeightScaleM = 0.028F;
+        config_.camberAngleFrontRadians = config_.speedwayCamberAngleFrontRadians;
+        config_.camberAngleRearRadians = config_.speedwayCamberAngleRearRadians;
     } else {
         // Road course: higher downforce and drag
         config_.aeroDragNPerMps2 = 1.10F;
@@ -1334,6 +1353,8 @@ void Vehicle::setAeroPreset(int preset) {
         config_.frontDownforceFraction = 0.46F;
         config_.maxGroundEffectMultiplier = 2.50F;
         config_.groundEffectRideHeightScaleM = 0.034F;
+        config_.camberAngleFrontRadians = config_.roadCourseCamberAngleFrontRadians;
+        config_.camberAngleRearRadians = config_.roadCourseCamberAngleRearRadians;
     }
 }
 

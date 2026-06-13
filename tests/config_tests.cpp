@@ -89,6 +89,11 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.tireLoadSensitivityCoeff, 0.10F) ||
         !near(vehicleConfig.tireLoadSensitivityMinEfficiency, 0.65F) ||
         !near(vehicleConfig.tireLoadReferenceNormalN, 1500.0F) ||
+        !near(vehicleConfig.tireCamberStiffnessNPerRad, 1000.0F) ||
+        !near(vehicleConfig.camberAngleFrontRadians, -0.052F) ||
+        !near(vehicleConfig.camberAngleRearRadians, -0.017F) ||
+        !near(vehicleConfig.roadCourseCamberAngleFrontRadians, -0.070F) ||
+        !near(vehicleConfig.roadCourseCamberAngleRearRadians, -0.030F) ||
         !near(vehicleConfig.tireRelaxationLengthM, 0.12F) ||
         !near(vehicleConfig.frontSpringRateNPerM, 100000.0F) ||
         !near(vehicleConfig.rearStaticRideHeightM, 0.060F) ||
@@ -193,6 +198,27 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    sim::Vehicle straightCamberVehicle(vehicleConfig);
+    sim::InputActions straightCamberInput;
+    straightCamberInput.throttle = 0.85F;
+    float maximumStraightCamberYawRate = 0.0F;
+    float maximumStraightCamberLateralSpeed = 0.0F;
+    for (int step = 0; step < stepsForSeconds(1.5F); ++step) {
+        straightCamberVehicle.step(straightCamberInput, kPhysicsDt);
+        maximumStraightCamberYawRate =
+            std::max(maximumStraightCamberYawRate, std::abs(straightCamberVehicle.current().yawRate));
+        maximumStraightCamberLateralSpeed = std::max(
+            maximumStraightCamberLateralSpeed,
+            std::abs(straightCamberVehicle.current().lateralSpeedMps));
+    }
+    if (maximumStraightCamberYawRate > 0.06F ||
+        maximumStraightCamberLateralSpeed > 0.35F) {
+        std::cerr << "Static camber thrust should cancel left/right in straight-line running"
+                  << " yawRate=" << maximumStraightCamberYawRate
+                  << " lateralSpeed=" << maximumStraightCamberLateralSpeed << '\n';
+        return 1;
+    }
+
     for (int step = 0; step < stepsForSeconds(1.0F); ++step) {
         vehicle.step(input, kPhysicsDt);
     }
@@ -248,6 +274,38 @@ int main(int argc, char** argv) {
     }
     if (maximumYawRate <= 0.03F || maximumFrontLateralForceN <= 250.0F) {
         std::cerr << "Four-corner rigid-body tire forces did not create chassis yaw\n";
+        return 1;
+    }
+
+    auto camberCornerFrontForce = [&](const sim::VehicleConfig& testConfig) {
+        sim::Vehicle testVehicle(testConfig);
+        sim::InputActions drive;
+        drive.throttle = 1.0F;
+        for (int step = 0; step < stepsForSeconds(1.8F); ++step) {
+            testVehicle.step(drive, kPhysicsDt);
+        }
+        drive.throttle = 0.30F;
+        drive.steer = 0.68F;
+        float peakFrontForceN = 0.0F;
+        for (int step = 0; step < stepsForSeconds(0.65F); ++step) {
+            testVehicle.step(drive, kPhysicsDt);
+            peakFrontForceN =
+                std::max(peakFrontForceN, std::abs(testVehicle.current().frontLateralForceN));
+        }
+        return peakFrontForceN;
+    };
+    sim::VehicleConfig zeroCamberConfig = vehicleConfig;
+    zeroCamberConfig.tireCamberStiffnessNPerRad = 0.0F;
+    sim::VehicleConfig strongCamberConfig = vehicleConfig;
+    strongCamberConfig.tireCamberStiffnessNPerRad = 5000.0F;
+    strongCamberConfig.camberAngleFrontRadians = -0.120F;
+    strongCamberConfig.camberAngleRearRadians = -0.060F;
+    const float zeroCamberFrontForceN = camberCornerFrontForce(zeroCamberConfig);
+    const float strongCamberFrontForceN = camberCornerFrontForce(strongCamberConfig);
+    if (strongCamberFrontForceN <= zeroCamberFrontForceN * 1.003F) {
+        std::cerr << "Camber thrust did not increase front lateral force"
+                  << " zeroCamber=" << zeroCamberFrontForceN
+                  << " strongCamber=" << strongCamberFrontForceN << '\n';
         return 1;
     }
 

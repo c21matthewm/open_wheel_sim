@@ -42,6 +42,20 @@ returning scaled forces. This is important for high-speed coasting stability:
 off-throttle wheels can still generate lateral force instead of accidentally
 collapsing lateral grip to the longitudinal demand.
 
+Static setup camber contributes camber thrust before the combined-slip limiter:
+
+```text
+camber_thrust = tires.camber_stiffness_n_per_rad
+                * effective_camber_angle_rad
+                * normal_load / tires.load_reference_normal_n
+lateral_demand = lateral_slip_force + camber_thrust
+```
+
+The configured front/rear camber values are mirrored left/right so straight-line
+camber thrust cancels instead of creating artificial drift. The road-course
+setup uses more aggressive static camber than the speedway setup, but camber is
+still a setup constant rather than a suspension-kinematic value.
+
 The front wheel forces are rotated by steering angle before forces and yaw
 moments are integrated. Keyboard steering also has two stability assists:
 `InputManager` slows keyboard steering rate as vehicle speed rises, and
@@ -202,9 +216,9 @@ with 360 Hz as the default. Render timing does not alter the physics timestep.
 - Suspension runs against a smooth local track plane; there are no per-wheel
   terrain height samples, potholes, curbs, or arbitrary 3D mesh contacts yet.
 - The tire model has relaxation length, dynamic slip ratio, combined-slip
-  limiting, and a lightweight slip/usage-driven tire temperature and thermal
-  grip state, but no pressure, wear, carcass modes, camber thrust, or
-  contact-patch deformation model.
+  limiting, static setup camber thrust, and a lightweight slip/usage-driven tire
+  temperature and thermal grip state, but no pressure, wear, carcass modes,
+  dynamic camber gain, or contact-patch deformation model.
 - Brake discs are currently clean metallic render parts, not thermal brake
   simulations.
 - Tire smoke/dust and undertray sparks are renderer-side presentation effects,

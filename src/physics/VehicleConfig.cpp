@@ -79,6 +79,28 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("tires.load_reference_normal_n", tireLoadReferenceNormalN),
         250.0F,
         8000.0F);
+    tireCamberStiffnessNPerRad = std::clamp(
+        config.getFloat("tires.camber_stiffness_n_per_rad", tireCamberStiffnessNPerRad),
+        0.0F,
+        5000.0F);
+    speedwayCamberAngleFrontRadians = std::clamp(
+        config.getFloat("tires.camber_angle_front_rad", speedwayCamberAngleFrontRadians),
+        -0.18F,
+        0.18F);
+    speedwayCamberAngleRearRadians = std::clamp(
+        config.getFloat("tires.camber_angle_rear_rad", speedwayCamberAngleRearRadians),
+        -0.18F,
+        0.18F);
+    roadCourseCamberAngleFrontRadians = std::clamp(
+        config.getFloat("tires.road_course_camber_angle_front_rad", roadCourseCamberAngleFrontRadians),
+        -0.18F,
+        0.18F);
+    roadCourseCamberAngleRearRadians = std::clamp(
+        config.getFloat("tires.road_course_camber_angle_rear_rad", roadCourseCamberAngleRearRadians),
+        -0.18F,
+        0.18F);
+    camberAngleFrontRadians = speedwayCamberAngleFrontRadians;
+    camberAngleRearRadians = speedwayCamberAngleRearRadians;
     tireRelaxationLengthM =
         std::clamp(config.getFloat("tires.relaxation_length_m", tireRelaxationLengthM), 0.03F, 0.60F);
     tireLongitudinalStiffness = std::max(

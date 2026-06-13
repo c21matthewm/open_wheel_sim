@@ -31,6 +31,13 @@ struct VehicleConfig {
     float tireLoadSensitivityCoeff = 0.10F;
     float tireLoadSensitivityMinEfficiency = 0.65F;
     float tireLoadReferenceNormalN = 1500.0F;
+    float tireCamberStiffnessNPerRad = 1000.0F;
+    float camberAngleFrontRadians = -0.052F;
+    float camberAngleRearRadians = -0.017F;
+    float speedwayCamberAngleFrontRadians = -0.052F;
+    float speedwayCamberAngleRearRadians = -0.017F;
+    float roadCourseCamberAngleFrontRadians = -0.070F;
+    float roadCourseCamberAngleRearRadians = -0.030F;
     float tireRelaxationLengthM = 0.12F;
     float tireLongitudinalStiffness = 78000.0F;
     float frontRollStiffnessFraction = 0.52F;
