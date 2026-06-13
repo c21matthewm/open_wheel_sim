@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: June 12, 2026
+Last updated: June 13, 2026
 
 This is the canonical current-state document for the Lightweight Open-Wheel Sim
 Prototype. It explains what exists now, how the application works, what has
@@ -128,9 +128,10 @@ The current app can:
 - render independently from physics and interpolate the vehicle transform
 - simulate a sprung chassis with heave, pitch, and roll DOFs, four unsprung
   wheel hubs, spring/damper/anti-roll-bar loads, tire vertical stiffness,
-  elastic lateral and longitudinal load transfer, transient tire relaxation
-  length, Pacejka-lite tire peak/falloff force curves, true force-at-corner
-  rigid-body yaw integration from each tire's `r x F` moment, physical
+  elastic lateral and longitudinal load transfer, degressive tire load
+  sensitivity, transient tire relaxation length, Pacejka-lite tire peak/falloff
+  force curves, true force-at-corner rigid-body yaw integration from each tire's
+  `r x F` moment, physical
   per-wheel angular velocity/inertia, wheelspin/lockup slip ratio, combined
   grip/friction-circle limiting, brake bias, IMS-stacked geometric drivetrain
   gearing that drops 12,000 RPM shifts to roughly 9,500 RPM, automatic shift
@@ -256,10 +257,10 @@ The current app can:
   large-radius production separable blur or full optical glass model.
 - The current tire model uses relaxation length for lateral slip, dynamic slip
   ratio for longitudinal force, a compact Pacejka-lite peak/falloff curve,
-  friction-circle combined-slip limiting, and a simple slip/usage-driven tire
-  temperature/thermal-grip state. It still has no pressure, wear, carcass
-  modes, camber thrust, contact-patch deformation, or fully validated tire test
-  data.
+  degressive load sensitivity, friction-circle combined-slip limiting, and a
+  simple slip/usage-driven tire temperature/thermal-grip state. It still has no
+  pressure, wear, carcass modes, camber thrust, contact-patch deformation, or
+  fully validated tire test data.
 - Wheel angular velocity supports wheelspin and lockup behavior. Engine RPM is
   coupled to driven wheel speed with an idle clamp for launchability; a full
   clutch, anti-stall, starter, and engine-stall simulation is not implemented.
@@ -369,7 +370,8 @@ Physics behavior is not tied to the render frame rate.
   timing, and in-memory ghost-lap recording/playback
 - `src/physics`: config-driven sprung/unsprung vehicle state, four-corner
   spring/damper/ARB suspension loads, tire vertical stiffness, transient tire
-  relaxation, Pacejka-lite tire forces with peak/falloff behavior,
+  relaxation, Pacejka-lite tire forces with peak/falloff behavior, degressive
+  load-sensitive friction limits,
   combined-slip tire forces with separate longitudinal/lateral friction limits,
   force-at-corner rigid-body tire torque integration, dynamic tire
   temperature/thermal-grip state, dynamic wheel angular
@@ -438,7 +440,7 @@ scheme for `LightweightSim` when the Xcode generator is available.
 - `config/vehicle_openwheel_default.json`: vehicle body/inertia, steering,
   suspension, four-corner tire/load-transfer, drivetrain/wheel-inertia, brake,
   IMS-stacked geometric speedway gearing, automatic transmission toggle,
-  Pacejka-lite tire curve shape,
+  Pacejka-lite tire curve shape, degressive tire load-sensitivity coefficients,
   ground-effect aero/CoP sensitivity, resistance parameters, and high-speed
   steering cap values; the default high-speed steering scale is `0.22`, the
   default 6th gear redlines at about 239 mph with the configured tire radius,
@@ -493,7 +495,7 @@ toolchain troubleshooting and optional Xcode project generation.
 
 ## Latest Verification
 
-Verified on June 12, 2026 after the 360 Hz physics timing update, keyboard
+Verified on June 13, 2026 after the 360 Hz physics timing update, keyboard
 steering retune, IR-18 mesh generator rewrite, regenerated OBJ assets, visual
 wheelbase/tire-scale alignment, cockpit camera update, locked-distance chase
 camera fix, center-protected speed-blur reduction, launch wheelspin upshift
@@ -510,7 +512,8 @@ skybox-backed environment lighting/reflections, removed exhaust flame/heat
 shimmer effects, the MoTeC-style HUD pass, the R-1 render-performance
 shadow-map recovery pass, the R-2 MSAA recovery pass, the R-3 bloom-chain
 simplification pass, the R-4 HUD glass tap-count reduction, and the R-5
-shadow-update interval pass, and the R-6 half-precision bloom shader pass:
+shadow-update interval pass, the R-6 half-precision bloom shader pass, and the
+P-1 degressive tire load-sensitivity pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -529,8 +532,9 @@ shadow-update interval pass, and the R-6 half-precision bloom shader pass:
 - `ctest --test-dir build --output-on-failure -C Release` passed
   `config_tests` and `game_tests`; `config_tests` now includes the 360 Hz
   physics-rate check, IMS speedway 6th-gear redline, geometric 9500 RPM
-  post-shift drop checks, Pacejka-lite tire/aero config load checks, dynamic
-  tire temperature/thermal-grip telemetry checks, a rigid-body steering/yaw
+  post-shift drop checks, Pacejka-lite tire/aero config load checks,
+  degressive load-sensitivity config and high-load cornering regression checks,
+  dynamic tire temperature/thermal-grip telemetry checks, a rigid-body steering/yaw
   regression check, manual shift-cooldown and manual limiter regression checks,
   and a full-throttle launch regression check that prevents automatic shifting
   past 2nd while the car is below the 2nd-gear launch threshold. `game_tests`
