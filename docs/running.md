@@ -115,9 +115,10 @@ World geometry uses ACES-style filmic tone mapping, gamma correction,
 procedural material shading, a generated sky with sun glow, richer horizon
 color and soft clouds, sky-matched fog, contact-shadow/material-occlusion
 grounding under the car, texture-backed normal maps, HDR sharpening,
-half-precision two-level bloom, configurable 2x default MSAA edge smoothing,
-configurable cached 2048x2048 default local sun shadows, and subtle screen-edge
-lens grading.
+half-precision config-weighted two-level bloom, configurable 2x default MSAA
+edge smoothing, configurable cached 2048x2048 default local sun shadows,
+configurable HUD glass blur/refraction radii, and subtle screen-edge lens
+grading.
 The chase camera uses a fixed distance, locked height, and constant 50-degree
 FOV; `C` toggles to a seated 55-degree chassis-locked cockpit camera with no
 cockpit shake.

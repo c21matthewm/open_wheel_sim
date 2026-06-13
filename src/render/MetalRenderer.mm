@@ -1697,7 +1697,7 @@ const char* shaderSource() {
             sampler linearSampler [[sampler(0)]]) {
             const float2 uv = clamp(input.position.xy / max(uniforms.renderParams.xy, float2(1.0)), 0.0, 1.0);
             const float2 texel = 1.0 / max(uniforms.renderParams.xy, float2(1.0));
-            const float2 blurRadius = texel * 8.0;
+            const float2 blurRadius = texel * max(uniforms.effectParams.x, 0.0);
             const float3 blurred =
                 hdrTexture.sample(linearSampler, uv).rgb * 0.28 +
                 hdrTexture.sample(linearSampler, clamp(uv + float2( blurRadius.x, 0.0), 0.0, 1.0)).rgb * 0.14 +
@@ -1710,7 +1710,7 @@ const char* shaderSource() {
                 noise21(uv * float2(220.0, 157.0) + uniforms.renderParams.z * 0.12),
                 noise21(uv * float2(141.0, 263.0) - uniforms.renderParams.z * 0.10)) - 0.5;
             const float3 refracted =
-                hdrTexture.sample(linearSampler, clamp(uv + refractNoise * texel * 7.0, 0.0, 1.0)).rgb;
+                hdrTexture.sample(linearSampler, clamp(uv + refractNoise * texel * max(uniforms.effectParams.y, 0.0), 0.0, 1.0)).rgb;
             const float3 glassScene = lensGrade(mix(blurred, refracted, 0.24), uv, 0.35);
             const float alpha = input.color.a;
             const float3 color =
@@ -1780,8 +1780,8 @@ const char* shaderSource() {
             }
             color /= blurWeight;
             const half3 bloom =
-                bloomTexture.sample(linearSampler, uv).rgb * 0.86h +
-                bloomQuarterTexture.sample(linearSampler, uv).rgb * 0.98h;
+                bloomTexture.sample(linearSampler, uv).rgb * half(uniforms.effectParams.y) +
+                bloomQuarterTexture.sample(linearSampler, uv).rgb * half(uniforms.effectParams.z);
             color += float3(bloom);
             return float4(lensGrade(color, uv, 1.0), 1.0);
         }
@@ -1884,6 +1884,13 @@ struct MetalRenderer::Impl {
     int shadowMapSize = 2048;
     int shadowUpdateInterval = 2;
     NSUInteger worldSampleCount = 2U;
+    float shadowFrustumExtentM = 82.0F;
+    float shadowLightDistanceM = 150.0F;
+    float shadowLightHeightOffsetM = 52.0F;
+    float bloomHalfWeight = 0.86F;
+    float bloomQuarterWeight = 0.98F;
+    float hudGlassBlurRadiusPx = 8.0F;
+    float hudGlassRefractionRadiusPx = 7.0F;
     std::uint64_t shadowFrameCounter = 0;
     float elapsedSeconds = 0.0F;
     float cameraTrauma = 0.0F;
@@ -3001,6 +3008,13 @@ bool MetalRenderer::initialize(
     int shadowMapSize,
     int shadowUpdateInterval,
     int msaaSamples,
+    float shadowFrustumExtentM,
+    float shadowLightDistanceM,
+    float shadowLightHeightOffsetM,
+    float bloomHalfWeight,
+    float bloomQuarterWeight,
+    float hudGlassBlurRadiusPx,
+    float hudGlassRefractionRadiusPx,
     const Track& track) {
     impl_->metalView = SDL_Metal_CreateView(window.nativeHandle());
     if (impl_->metalView == nullptr) {
@@ -3022,6 +3036,13 @@ bool MetalRenderer::initialize(
     impl_->shadowMapSize = std::clamp(shadowMapSize, 1024, 4096);
     impl_->shadowUpdateInterval = std::clamp(shadowUpdateInterval, 1, 3);
     impl_->worldSampleCount = msaaSamples <= 2 ? 2U : 4U;
+    impl_->shadowFrustumExtentM = std::clamp(shadowFrustumExtentM, 45.0F, 180.0F);
+    impl_->shadowLightDistanceM = std::clamp(shadowLightDistanceM, 80.0F, 280.0F);
+    impl_->shadowLightHeightOffsetM = std::clamp(shadowLightHeightOffsetM, 0.0F, 120.0F);
+    impl_->bloomHalfWeight = std::clamp(bloomHalfWeight, 0.0F, 2.0F);
+    impl_->bloomQuarterWeight = std::clamp(bloomQuarterWeight, 0.0F, 2.0F);
+    impl_->hudGlassBlurRadiusPx = std::clamp(hudGlassBlurRadiusPx, 0.0F, 24.0F);
+    impl_->hudGlassRefractionRadiusPx = std::clamp(hudGlassRefractionRadiusPx, 0.0F, 24.0F);
     impl_->shadowFrameCounter = 0;
     impl_->hasValidShadowMap = false;
     impl_->cachedShadowViewProjection = Mat4::identity();
@@ -3311,19 +3332,17 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
             scene.vehicleHeightM + 2.0F,
             scene.vehicle.positionZ + carForward.z * 3.5F,
         };
-        constexpr float kShadowLightDistanceM = 150.0F;
-        constexpr float kShadowFrustumExtentM = 82.0F;
         const Vec3 lightEye{
-            shadowCenter.x - sunDirection.x * kShadowLightDistanceM,
-            shadowCenter.y - sunDirection.y * kShadowLightDistanceM + 52.0F,
-            shadowCenter.z - sunDirection.z * kShadowLightDistanceM,
+            shadowCenter.x - sunDirection.x * impl_->shadowLightDistanceM,
+            shadowCenter.y - sunDirection.y * impl_->shadowLightDistanceM + impl_->shadowLightHeightOffsetM,
+            shadowCenter.z - sunDirection.z * impl_->shadowLightDistanceM,
         };
         const Mat4 lightView = lookAtLeftHanded(lightEye, shadowCenter, {0.0F, 1.0F, 0.0F});
         const Mat4 lightProjection = orthographic(
-            -kShadowFrustumExtentM,
-            kShadowFrustumExtentM,
-            -kShadowFrustumExtentM,
-            kShadowFrustumExtentM,
+            -impl_->shadowFrustumExtentM,
+            impl_->shadowFrustumExtentM,
+            -impl_->shadowFrustumExtentM,
+            impl_->shadowFrustumExtentM,
             0.1F,
             260.0F);
         const Mat4 candidateShadowViewProjection = multiply(lightProjection, lightView);
@@ -3734,8 +3753,8 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
         copyUniforms(postUniforms, identity, identity, identity, eye);
         postUniforms.effectParams[0] =
             std::pow(std::clamp(scene.vehicle.speedMps / 110.0F, 0.0F, 1.0F), 1.35F) * 0.42F;
-        postUniforms.effectParams[1] = 0.0F;
-        postUniforms.effectParams[2] = 0.0F;
+        postUniforms.effectParams[1] = impl_->bloomHalfWeight;
+        postUniforms.effectParams[2] = impl_->bloomQuarterWeight;
         postUniforms.effectParams[3] = 0.0F;
         [finalEncoder setRenderPipelineState:impl_->postPipeline];
         [finalEncoder setVertexBuffer:impl_->skyBuffer offset:0 atIndex:0];
@@ -3757,6 +3776,8 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
         const std::size_t uiVertexCount = impl_->buildUiVertices(scene, overlay);
         if (uiVertexCount > 0) {
             copyUniforms(uniforms, textProjection, identity, identity, eye);
+            uniforms.effectParams[0] = impl_->hudGlassBlurRadiusPx;
+            uniforms.effectParams[1] = impl_->hudGlassRefractionRadiusPx;
             [finalEncoder setRenderPipelineState:impl_->uiPipeline];
             [finalEncoder setDepthStencilState:impl_->textDepthState];
             [finalEncoder setVertexBuffer:impl_->uiBuffer offset:0 atIndex:0];

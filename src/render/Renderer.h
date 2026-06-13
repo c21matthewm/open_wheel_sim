@@ -21,6 +21,13 @@ public:
         int shadowMapSize,
         int shadowUpdateInterval,
         int msaaSamples,
+        float shadowFrustumExtentM,
+        float shadowLightDistanceM,
+        float shadowLightHeightOffsetM,
+        float bloomHalfWeight,
+        float bloomQuarterWeight,
+        float hudGlassBlurRadiusPx,
+        float hudGlassRefractionRadiusPx,
         const Track& track) = 0;
     virtual void shutdown() = 0;
     virtual bool render(const RenderScene& scene, const DebugOverlay& overlay) = 0;

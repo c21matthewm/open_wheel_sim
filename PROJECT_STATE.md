@@ -96,8 +96,9 @@ The current app can:
   vignette/chromatic lens grading; and a skybox-backed generated sky pass with
   sun glow, richer horizon color, cirrus, and procedural drifting clouds
 - render a configurable 2048x2048 default sun shadow-map pass on a configurable
-  interval that defaults to every other frame, focused to roughly an 80 m
-  region around the player car, then apply Poisson-disk PCF-filtered dynamic
+  interval that defaults to every other frame, focused by configurable local
+  frustum/light-distance settings to roughly an 80 m region around the player
+  car, then apply Poisson-disk PCF-filtered dynamic
   shadows in the world shader for the car, wheels, dynamic suspension rods,
   fencing, walls, and grandstand geometry using the cached matching light
   matrix on skipped update frames
@@ -105,8 +106,8 @@ The current app can:
   color and depth targets, resolve the smoothed scene into the single-sample HDR
   texture,
   extract bright highlights through half- and quarter-resolution bloom targets
-  using half-precision bloom shader math, and composite the two-level bloom plus
-  a reduced,
+  using half-precision bloom shader math, and composite the config-weighted
+  two-level bloom plus a reduced,
   center-protected speed-weighted radial motion-blur approximation in a final
   post pass before HUD/text rendering
 - use a fixed-distance chase camera with constant 50-degree FOV, locked
@@ -258,8 +259,9 @@ The current app can:
   remains a screen-space radial approximation rather than a true per-pixel
   velocity-buffer pass.
 - HUD glass samples and blurs the resolved HDR scene buffer behind the UI
-  panels, but the blur is a compact 7-tap shader pass rather than a
-  large-radius production separable blur or full optical glass model.
+  panels, but the blur is a compact 7-tap shader pass with configurable
+  blur/refraction radii rather than a large-radius production separable blur or
+  full optical glass model.
 - The current tire model uses relaxation length for lateral slip, dynamic slip
   ratio for longitudinal force, load/speed-dependent relaxation length, a
   compact Pacejka-lite peak/falloff curve, degressive load sensitivity, static
@@ -438,10 +440,12 @@ scheme for `LightweightSim` when the Xcode generator is available.
 ## Configuration
 
 - `config/graphics_default.json`: window, fullscreen, vsync, render scale,
-  MSAA sample count, shadow map size, shadow update interval, and physics
-  timing; the default physics tick is 360 Hz for the stiff IR-18-style
-  spring/unsprung-mass setup, the default MSAA sample count is 2, the default
-  shadow map size is 2048, and the default shadow update interval is 2 frames
+  MSAA sample count, shadow map size, shadow update interval, shadow local
+  frustum/light placement, bloom blend weights, HUD glass blur/refraction
+  radii, and physics timing; the default physics tick is 360 Hz for the stiff
+  IR-18-style spring/unsprung-mass setup, the default MSAA sample count is 2,
+  the default shadow map size is 2048, and the default shadow update interval
+  is 2 frames
 - `config/input_default.json`: keyboard response, provisional wheel mapping,
   camera-toggle button, pedal inversion, deadzones, wheel steering sensitivity,
   and wheel/pedal gamma curves; the default keyboard steering rates are
@@ -527,7 +531,8 @@ simplification pass, the R-4 HUD glass tap-count reduction, the R-5
 shadow-update interval pass, the R-6 half-precision bloom shader pass, the
 P-1 degressive tire load-sensitivity pass, the P-2 static camber-thrust pass,
 the P-3 pneumatic-trail aligning-moment pass, the P-4 load-dependent
-relaxation-length pass, and the P-5 config-backed aero package pass:
+relaxation-length pass, the P-5 config-backed aero package pass, and the render
+config-tuning compliance pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -588,6 +593,13 @@ relaxation-length pass, and the P-5 config-backed aero package pass:
 - after the R-6 half-precision bloom shader change, the benchmark exited with:
   `FPS 49.5`, `FRAME 20.21 ms`, `PHYS 0.034 ms`, `RENDER 19.78 ms`, and
   `PHYS_STEPS 358.4/s`.
+- before the render config-tuning compliance pass, the current renderer
+  benchmarked at `FPS 46.7`, `FRAME 21.41 ms`, `PHYS 0.036 ms`,
+  `RENDER 20.58 ms`, and `PHYS_STEPS 359.2/s`. After moving the remaining
+  shadow-frustum, bloom-weight, and HUD-glass tuning constants into
+  `graphics_default.json`, the same benchmark exited with `FPS 46.9`,
+  `FRAME 21.32 ms`, `PHYS 0.042 ms`, `RENDER 20.82 ms`, and
+  `PHYS_STEPS 359.2/s`.
 - final verification after the P-1 through P-5 physics upgrade rebuilt cleanly,
   passed `ctest`, and benchmarked at `FPS 43.0`, `FRAME 23.27 ms`,
   `PHYS 0.038 ms`, `RENDER 22.41 ms`, and `PHYS_STEPS 358.4/s`. The fixed

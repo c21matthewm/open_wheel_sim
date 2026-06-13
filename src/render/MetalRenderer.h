@@ -19,6 +19,13 @@ public:
         int shadowMapSize,
         int shadowUpdateInterval,
         int msaaSamples,
+        float shadowFrustumExtentM,
+        float shadowLightDistanceM,
+        float shadowLightHeightOffsetM,
+        float bloomHalfWeight,
+        float bloomQuarterWeight,
+        float hudGlassBlurRadiusPx,
+        float hudGlassRefractionRadiusPx,
         const Track& track) override;
     void shutdown() override;
     bool render(const RenderScene& scene, const DebugOverlay& overlay) override;

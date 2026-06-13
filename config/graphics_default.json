@@ -11,7 +11,14 @@
     "scale": 1.0,
     "shadow_map_size": 2048,
     "shadow_update_interval": 2,
-    "msaa_samples": 2
+    "shadow_frustum_extent_m": 82.0,
+    "shadow_light_distance_m": 150.0,
+    "shadow_light_height_offset_m": 52.0,
+    "msaa_samples": 2,
+    "bloom_half_weight": 0.86,
+    "bloom_quarter_weight": 0.98,
+    "hud_glass_blur_radius_px": 8.0,
+    "hud_glass_refraction_radius_px": 7.0
   },
   "simulation": {
     "physics_hz": 360,

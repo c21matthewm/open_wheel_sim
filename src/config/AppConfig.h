@@ -16,7 +16,14 @@ struct GraphicsConfig {
     float renderScale = 1.0F;
     int shadowMapSize = 2048;
     int shadowUpdateInterval = 2;
+    float shadowFrustumExtentM = 82.0F;
+    float shadowLightDistanceM = 150.0F;
+    float shadowLightHeightOffsetM = 52.0F;
     int msaaSamples = 2;
+    float bloomHalfWeight = 0.86F;
+    float bloomQuarterWeight = 0.98F;
+    float hudGlassBlurRadiusPx = 8.0F;
+    float hudGlassRefractionRadiusPx = 7.0F;
     int physicsHz = 360;
     float maxFrameDelta = 0.1F;
 

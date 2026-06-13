@@ -242,6 +242,13 @@ bool App::initialize() {
             graphicsConfig_.shadowMapSize,
             graphicsConfig_.shadowUpdateInterval,
             graphicsConfig_.msaaSamples,
+            graphicsConfig_.shadowFrustumExtentM,
+            graphicsConfig_.shadowLightDistanceM,
+            graphicsConfig_.shadowLightHeightOffsetM,
+            graphicsConfig_.bloomHalfWeight,
+            graphicsConfig_.bloomQuarterWeight,
+            graphicsConfig_.hudGlassBlurRadiusPx,
+            graphicsConfig_.hudGlassRefractionRadiusPx,
             raceSession_->track())) {
         std::fprintf(stderr, "Renderer initialization failed: %s\n", renderer_.error().c_str());
         return false;

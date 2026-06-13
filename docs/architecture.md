@@ -45,8 +45,9 @@ impact thuds from vehicle/input/race telemetry.
 `MetalRenderer` owns the SDL Metal view, `CAMetalLayer`, sky/world/FX/UI/text
 pipelines, static procedural meshes, dynamic smoke vertices, configurable 2x
 default MSAA HDR/depth scene targets, resolved HDR/bloom/shadow targets, a
-configurable 2048x2048 default cached sun shadow map, and generated SDF font
-texture. It builds a screen-space procedural sky pass, the oval, racing surface
+configurable 2048x2048 default cached sun shadow map with configurable local
+frustum/light placement, and generated SDF font texture. It builds a
+screen-space procedural sky pass, the oval, racing surface
 detail, catch fencing, grandstands, car body mesh, animated steering wheel
 mesh, and reusable wheel mesh from code and generated OBJ assets. World
 vertices carry material tags and local positions so the Metal
@@ -63,9 +64,10 @@ the car body, animated steering wheel, four transformed smooth-normal wheels,
 a wheel-mounted 3D SDF telemetry display, a translucent best-lap ghost car when
 available, and blended smoke/spark effects. It resolves the configurable 2x
 default MSAA HDR scene, extracts bright energy through half-precision
-half/quarter-resolution bloom targets, then composites the two-level bloom,
-reduced center-protected speed blur, HDR sharpening, tone mapping, lens
-grading, glass-style HUD mesh, and SDF text.
+half/quarter-resolution bloom targets, then composites the config-weighted
+two-level bloom, reduced center-protected speed blur, HDR sharpening, tone
+mapping, lens grading, glass-style HUD mesh with configurable blur/refraction
+radii, and SDF text.
 The camera is stateful inside the renderer: it supports fixed-distance chase
 and chassis-locked cockpit modes, uses a 50-degree chase FOV and 55-degree
 cockpit FOV, locks chase translation directly to the car to avoid high-speed

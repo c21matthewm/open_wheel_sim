@@ -52,8 +52,18 @@ int main(int argc, char** argv) {
     }
     sim::GraphicsConfig graphicsConfig;
     graphicsConfig.load(graphicsConfigFile);
-    if (graphicsConfig.physicsHz != kPhysicsHz) {
-        std::cerr << "Physics tick config did not load at 360 Hz\n";
+    if (graphicsConfig.physicsHz != kPhysicsHz ||
+        graphicsConfig.shadowMapSize != 2048 ||
+        graphicsConfig.shadowUpdateInterval != 2 ||
+        graphicsConfig.msaaSamples != 2 ||
+        !near(graphicsConfig.shadowFrustumExtentM, 82.0F) ||
+        !near(graphicsConfig.shadowLightDistanceM, 150.0F) ||
+        !near(graphicsConfig.shadowLightHeightOffsetM, 52.0F) ||
+        !near(graphicsConfig.bloomHalfWeight, 0.86F) ||
+        !near(graphicsConfig.bloomQuarterWeight, 0.98F) ||
+        !near(graphicsConfig.hudGlassBlurRadiusPx, 8.0F) ||
+        !near(graphicsConfig.hudGlassRefractionRadiusPx, 7.0F)) {
+        std::cerr << "Graphics/render performance config did not load expected defaults\n";
         return 1;
     }
 

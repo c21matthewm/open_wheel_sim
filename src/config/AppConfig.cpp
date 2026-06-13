@@ -17,8 +17,26 @@ void GraphicsConfig::load(const ConfigFile& config) {
     shadowMapSize = std::clamp(config.getInt("render.shadow_map_size", shadowMapSize), 1024, 4096);
     shadowUpdateInterval =
         std::clamp(config.getInt("render.shadow_update_interval", shadowUpdateInterval), 1, 3);
+    shadowFrustumExtentM =
+        std::clamp(config.getFloat("render.shadow_frustum_extent_m", shadowFrustumExtentM), 45.0F, 180.0F);
+    shadowLightDistanceM =
+        std::clamp(config.getFloat("render.shadow_light_distance_m", shadowLightDistanceM), 80.0F, 280.0F);
+    shadowLightHeightOffsetM = std::clamp(
+        config.getFloat("render.shadow_light_height_offset_m", shadowLightHeightOffsetM),
+        0.0F,
+        120.0F);
     const int requestedMsaaSamples = config.getInt("render.msaa_samples", msaaSamples);
     msaaSamples = requestedMsaaSamples <= 2 ? 2 : 4;
+    bloomHalfWeight =
+        std::clamp(config.getFloat("render.bloom_half_weight", bloomHalfWeight), 0.0F, 2.0F);
+    bloomQuarterWeight =
+        std::clamp(config.getFloat("render.bloom_quarter_weight", bloomQuarterWeight), 0.0F, 2.0F);
+    hudGlassBlurRadiusPx =
+        std::clamp(config.getFloat("render.hud_glass_blur_radius_px", hudGlassBlurRadiusPx), 0.0F, 24.0F);
+    hudGlassRefractionRadiusPx = std::clamp(
+        config.getFloat("render.hud_glass_refraction_radius_px", hudGlassRefractionRadiusPx),
+        0.0F,
+        24.0F);
     physicsHz = std::clamp(config.getInt("simulation.physics_hz", physicsHz), 30, 720);
     maxFrameDelta =
         std::clamp(config.getFloat("simulation.max_frame_delta", maxFrameDelta), 0.02F, 0.5F);
