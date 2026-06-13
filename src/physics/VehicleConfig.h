@@ -6,6 +6,15 @@ namespace sim {
 
 class ConfigFile;
 
+struct AeroPresetConfig {
+    float downforceNPerMps2 = 3.0F;
+    float dragNPerMps2 = 0.55F;
+    float frontDownforceFraction = 0.37F;
+    float brakeCopShift = 0.020F;
+    float stallRideHeightM = 0.040F;
+    float stallDownforceMultiplier = 0.60F;
+};
+
 struct VehicleConfig {
     float massKg = 733.0F;
     float yawInertiaKgM2 = 880.0F;
@@ -76,22 +85,24 @@ struct VehicleConfig {
     float brakeForceN = 22000.0F;
     float brakeBias = 0.58F;
     float brakeGamma = 1.10F;
-    float aeroDragNPerMps2 = 0.72F;
-    float downforceNPerMps2 = 1.95F;
-    float frontDownforceFraction = 0.43F;
+    float aeroDragNPerMps2 = 0.55F;
+    float downforceNPerMps2 = 3.0F;
+    float frontDownforceFraction = 0.37F;
     float aeroReferenceFrontRideHeightM = 0.048F;
     float aeroReferenceRearRideHeightM = 0.062F;
     float groundEffectRideHeightScaleM = 0.028F;
     float maxGroundEffectMultiplier = 2.90F;
-    float aeroStallRideHeightM = 0.016F;
-    float aeroStallDownforceMultiplier = 0.45F;
+    float aeroStallRideHeightM = 0.040F;
+    float aeroStallDownforceMultiplier = 0.60F;
     float aeroCopShiftPerMeter = 1.95F;
     float aeroRideHeightBalanceSensitivity = 0.22F;
-    float aeroBrakeCopShift = 0.035F;
+    float aeroBrakeCopShift = 0.020F;
     float aeroStallCopShift = 0.060F;
     float aeroInstantLoadFraction = 0.16F;
     float minFrontDownforceFraction = 0.30F;
     float maxFrontDownforceFraction = 0.60F;
+    AeroPresetConfig speedwayAeroPreset{};
+    AeroPresetConfig roadCourseAeroPreset{4.5F, 0.82F, 0.42F, 0.035F, 0.045F, 0.55F};
     float rollingResistanceN = 160.0F;
 
     void load(const ConfigFile& config);

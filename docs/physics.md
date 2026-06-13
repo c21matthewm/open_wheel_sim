@@ -174,6 +174,13 @@ component directly to tire normal loads so high-speed platform changes are felt
 without waiting entirely for suspension lag. Aerodynamic drag is also quadratic
 with speed and acts longitudinally against vehicle motion.
 
+The active aero package is selected by `Vehicle::setAeroPreset`. The configured
+`aero_presets.speedway` and `aero_presets.road_course` packages independently
+set downforce, drag, base front downforce fraction, brake CoP shift, stall
+height, and stall reduction. Speedway mode is lower-drag and more rear-biased;
+road-course mode adds downforce and front aero balance for sharper braking and
+turn-in.
+
 ## Banking
 
 Track banking now contributes to the planar physics model. `RaceSession`

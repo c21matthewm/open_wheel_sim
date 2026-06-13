@@ -1409,25 +1409,23 @@ void Vehicle::refreshSpeedTelemetry() {
 
 void Vehicle::setAeroPreset(int preset) {
     aeroPreset_ = std::clamp(preset, 0, 1);
+    const AeroPresetConfig& aeroPreset =
+        aeroPreset_ == 0 ? config_.speedwayAeroPreset : config_.roadCourseAeroPreset;
+    config_.aeroDragNPerMps2 = aeroPreset.dragNPerMps2;
+    config_.downforceNPerMps2 = aeroPreset.downforceNPerMps2;
+    config_.frontDownforceFraction = aeroPreset.frontDownforceFraction;
+    config_.aeroBrakeCopShift = aeroPreset.brakeCopShift;
+    config_.aeroStallRideHeightM = aeroPreset.stallRideHeightM;
+    config_.aeroStallDownforceMultiplier = aeroPreset.stallDownforceMultiplier;
     if (aeroPreset_ == 0) {
-        // Speedway: lower drag, lower downforce, more pitch/yaw sensitivity
-        config_.aeroDragNPerMps2 = 0.72F;
-        config_.downforceNPerMps2 = 1.95F;
-        config_.frontDownforceFraction = 0.43F;
-        config_.maxGroundEffectMultiplier = 2.90F;
-        config_.groundEffectRideHeightScaleM = 0.028F;
         config_.camberAngleFrontRadians = config_.speedwayCamberAngleFrontRadians;
         config_.camberAngleRearRadians = config_.speedwayCamberAngleRearRadians;
     } else {
-        // Road course: higher downforce and drag
-        config_.aeroDragNPerMps2 = 1.10F;
-        config_.downforceNPerMps2 = 3.20F;
-        config_.frontDownforceFraction = 0.46F;
-        config_.maxGroundEffectMultiplier = 2.50F;
-        config_.groundEffectRideHeightScaleM = 0.034F;
         config_.camberAngleFrontRadians = config_.roadCourseCamberAngleFrontRadians;
         config_.camberAngleRearRadians = config_.roadCourseCamberAngleRearRadians;
     }
+    current_.aeroCenterOfPressure = config_.frontDownforceFraction;
+    previous_.aeroCenterOfPressure = config_.frontDownforceFraction;
 }
 
 const char* Vehicle::aeroPresetName() const {

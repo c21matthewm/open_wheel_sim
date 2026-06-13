@@ -147,7 +147,9 @@ The current app can:
   braking CoP migration, undertray stall/bottoming reduction, asymmetric
   bottoming CoP shift, a small instant current-platform aero-load component,
   and forward CoP migration when the nose rides lower than the rear, alongside
-  switchable Speedway and Road Course aero presets that modify base drag and downforce
+  switchable config-backed Speedway and Road Course aero presets that modify
+  downforce, drag, base front aero balance, braking CoP shift, stall height, and
+  stall reduction
 - apply track banking to physics through lateral gravity decomposed relative to
   the track tangent (scaling with heading error) and bank-adjusted normal-load
   calculations, preventing sustained lateral slip on straights
@@ -270,8 +272,8 @@ The current app can:
   coupled to driven wheel speed with an idle clamp for launchability; a full
   clutch, anti-stall, starter, and engine-stall simulation is not implemented.
 - Ground-effect downforce reacts to front/rear ride height and rake with an
-  undertray stall floor, but it is an analytic model, not CFD or
-  wind-tunnel-derived aero-map data.
+  undertray stall floor and config-backed aero package presets, but it is an
+  analytic model, not CFD or wind-tunnel-derived aero-map data.
 - Oval wall containment uses a yaw-aware four-corner vehicle bounding box
   against the analytic outer and inner wall offsets. It prevents center-only
   wall clipping and adds contact-point yaw impulse response, but there is still
@@ -384,7 +386,8 @@ Physics behavior is not tied to the render frame rate.
   velocity/slip ratio, banking, IMS speedway geometric gearing with shift
   cooldown, strict manual/automatic transmission modes, smooth manual-mode RPM
   limiter bounce, drivetrain, brake, current-ride-height-sensitive ground-effect aero with
-  dynamic CoP migration, load-transfer, high-speed road-wheel-angle capping,
+  dynamic CoP migration and config-backed speedway/road-course package presets,
+  load-transfer, high-speed road-wheel-angle capping,
   contact-offset wall impulse response, launch wheelspin-aware automatic
   upshift gating, and telemetry behavior
 - `src/render`: Metal renderer, compact ImageIO/CoreGraphics texture loading,
@@ -449,6 +452,7 @@ scheme for `LightweightSim` when the Xcode generator is available.
   Pacejka-lite tire curve shape, degressive tire load-sensitivity coefficients,
   speedway and road-course static camber setup values, tire pneumatic and
   mechanical trail values, load/speed-dependent tire relaxation length values,
+  speedway and road-course aero preset packages,
   ground-effect aero/CoP sensitivity, resistance parameters, and high-speed
   steering cap values; the default high-speed steering scale is `0.22`, the
   default 6th gear redlines at about 239 mph with the configured tire radius,
@@ -523,7 +527,7 @@ simplification pass, the R-4 HUD glass tap-count reduction, and the R-5
 shadow-update interval pass, the R-6 half-precision bloom shader pass, the
 P-1 degressive tire load-sensitivity pass, the P-2 static camber-thrust pass,
 the P-3 pneumatic-trail aligning-moment pass, and the P-4 load-dependent
-relaxation-length pass:
+relaxation-length pass, and the P-5 config-backed aero package pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -547,6 +551,7 @@ relaxation-length pass:
   camber config, straight-line camber-cancellation, and camber-thrust regression checks,
   pneumatic-trail telemetry and aligning-yaw-moment regression checks,
   load-dependent relaxation-length config and telemetry regression checks,
+  speedway/road-course aero package config and behavior regression checks,
   dynamic tire temperature/thermal-grip telemetry checks, a rigid-body steering/yaw
   regression check, manual shift-cooldown and manual limiter regression checks,
   and a full-throttle launch regression check that prevents automatic shifting

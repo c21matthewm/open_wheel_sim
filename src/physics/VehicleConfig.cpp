@@ -273,6 +273,47 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("aero.max_front_downforce_fraction", maxFrontDownforceFraction),
         minFrontDownforceFraction,
         0.95F);
+    const auto loadAeroPreset = [&](const char* prefix, AeroPresetConfig fallback) {
+        AeroPresetConfig preset = fallback;
+        const std::string base = std::string("aero_presets.") + prefix + ".";
+        preset.downforceNPerMps2 =
+            std::max(0.0F, config.getFloat(base + "downforce_n_per_mps2", preset.downforceNPerMps2));
+        preset.dragNPerMps2 = std::max(
+            0.0F,
+            config.getFloat(
+                base + "drag_coefficient",
+                config.getFloat(base + "drag_n_per_mps2", preset.dragNPerMps2)));
+        preset.frontDownforceFraction = std::clamp(
+            config.getFloat(base + "front_downforce_fraction", preset.frontDownforceFraction),
+            minFrontDownforceFraction,
+            maxFrontDownforceFraction);
+        preset.brakeCopShift =
+            std::clamp(config.getFloat(base + "brake_cop_shift", preset.brakeCopShift), 0.0F, 0.12F);
+        preset.stallRideHeightM =
+            std::clamp(config.getFloat(base + "stall_height_m", preset.stallRideHeightM), 0.002F, 0.12F);
+        preset.stallDownforceMultiplier = std::clamp(
+            config.getFloat(base + "stall_reduction_factor", preset.stallDownforceMultiplier),
+            0.05F,
+            1.0F);
+        return preset;
+    };
+    speedwayAeroPreset = loadAeroPreset(
+        "speedway",
+        AeroPresetConfig{
+            downforceNPerMps2,
+            aeroDragNPerMps2,
+            frontDownforceFraction,
+            aeroBrakeCopShift,
+            aeroStallRideHeightM,
+            aeroStallDownforceMultiplier,
+        });
+    roadCourseAeroPreset = loadAeroPreset("road_course", roadCourseAeroPreset);
+    downforceNPerMps2 = speedwayAeroPreset.downforceNPerMps2;
+    aeroDragNPerMps2 = speedwayAeroPreset.dragNPerMps2;
+    frontDownforceFraction = speedwayAeroPreset.frontDownforceFraction;
+    aeroBrakeCopShift = speedwayAeroPreset.brakeCopShift;
+    aeroStallRideHeightM = speedwayAeroPreset.stallRideHeightM;
+    aeroStallDownforceMultiplier = speedwayAeroPreset.stallDownforceMultiplier;
     rollingResistanceN =
         std::max(0.0F, config.getFloat("resistance.rolling_resistance_n", rollingResistanceN));
 }

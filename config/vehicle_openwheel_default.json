@@ -84,22 +84,40 @@
     "brake_gamma": 1.1
   },
   "aero": {
-    "drag_n_per_mps2": 0.72,
-    "downforce_n_per_mps2": 1.95,
-    "front_downforce_fraction": 0.43,
+    "drag_n_per_mps2": 0.55,
+    "downforce_n_per_mps2": 3.0,
+    "front_downforce_fraction": 0.37,
     "reference_front_ride_height_m": 0.048,
     "reference_rear_ride_height_m": 0.062,
     "ground_effect_ride_height_scale_m": 0.028,
     "max_ground_effect_multiplier": 2.9,
-    "stall_ride_height_m": 0.016,
-    "stall_downforce_multiplier": 0.45,
+    "stall_ride_height_m": 0.040,
+    "stall_downforce_multiplier": 0.60,
     "cop_shift_per_meter": 1.95,
     "ride_height_balance_sensitivity": 0.22,
-    "brake_cop_shift": 0.035,
+    "brake_cop_shift": 0.020,
     "stall_cop_shift": 0.060,
     "instant_load_fraction": 0.16,
     "min_front_downforce_fraction": 0.30,
     "max_front_downforce_fraction": 0.60
+  },
+  "aero_presets": {
+    "speedway": {
+      "downforce_n_per_mps2": 3.0,
+      "drag_coefficient": 0.55,
+      "front_downforce_fraction": 0.37,
+      "brake_cop_shift": 0.020,
+      "stall_height_m": 0.040,
+      "stall_reduction_factor": 0.60
+    },
+    "road_course": {
+      "downforce_n_per_mps2": 4.5,
+      "drag_coefficient": 0.82,
+      "front_downforce_fraction": 0.42,
+      "brake_cop_shift": 0.035,
+      "stall_height_m": 0.045,
+      "stall_reduction_factor": 0.55
+    }
   },
   "resistance": {
     "rolling_resistance_n": 160.0

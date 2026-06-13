@@ -80,7 +80,9 @@ int main(int argc, char** argv) {
     vehicleConfig.load(config);
     if (!near(vehicleConfig.centerOfMassHeightM, 0.30F) ||
         !near(vehicleConfig.brakeBias, 0.58F) ||
-        !near(vehicleConfig.downforceNPerMps2, 1.95F) ||
+        !near(vehicleConfig.downforceNPerMps2, 3.0F) ||
+        !near(vehicleConfig.aeroDragNPerMps2, 0.55F) ||
+        !near(vehicleConfig.frontDownforceFraction, 0.37F) ||
         !near(vehicleConfig.finalDriveRatio, 3.65F) ||
         !near(vehicleConfig.gearRatios[0], 3.55345F) ||
         !near(vehicleConfig.gearRatios[5], 1.105F) ||
@@ -103,7 +105,15 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.rearStaticRideHeightM, 0.060F) ||
         !near(vehicleConfig.wheelInertiaKgM2, 1.25F) ||
         !near(vehicleConfig.maxGroundEffectMultiplier, 2.90F) ||
-        !near(vehicleConfig.aeroBrakeCopShift, 0.035F) ||
+        !near(vehicleConfig.aeroBrakeCopShift, 0.020F) ||
+        !near(vehicleConfig.aeroStallRideHeightM, 0.040F) ||
+        !near(vehicleConfig.aeroStallDownforceMultiplier, 0.60F) ||
+        !near(vehicleConfig.roadCourseAeroPreset.downforceNPerMps2, 4.5F) ||
+        !near(vehicleConfig.roadCourseAeroPreset.dragNPerMps2, 0.82F) ||
+        !near(vehicleConfig.roadCourseAeroPreset.frontDownforceFraction, 0.42F) ||
+        !near(vehicleConfig.roadCourseAeroPreset.brakeCopShift, 0.035F) ||
+        !near(vehicleConfig.roadCourseAeroPreset.stallRideHeightM, 0.045F) ||
+        !near(vehicleConfig.roadCourseAeroPreset.stallDownforceMultiplier, 0.55F) ||
         !near(vehicleConfig.aeroInstantLoadFraction, 0.16F) ||
         !near(vehicleConfig.frontRollStiffnessFraction, 0.52F) ||
         !near(vehicleConfig.highSpeedSteerScale, 0.22F) ||
@@ -234,6 +244,40 @@ int main(int argc, char** argv) {
         vehicle.current().rpm < vehicleConfig.idleRpm ||
         vehicle.current().downforceN <= 0.0F) {
         std::cerr << "Vehicle drivetrain/aero telemetry did not update\n";
+        return 1;
+    }
+    struct AeroSample {
+        float downforceN = 0.0F;
+        float centerOfPressure = 0.0F;
+    };
+    auto aeroPresetSample = [&](int preset) {
+        sim::Vehicle testVehicle(vehicleConfig);
+        testVehicle.setAeroPreset(preset);
+        sim::InputActions drive;
+        drive.throttle = 1.0F;
+        for (int step = 0; step < stepsForSeconds(2.0F); ++step) {
+            testVehicle.step(drive, kPhysicsDt);
+        }
+        drive.throttle = 0.0F;
+        drive.brake = 0.75F;
+        AeroSample sample{testVehicle.current().downforceN, testVehicle.current().aeroCenterOfPressure};
+        for (int step = 0; step < stepsForSeconds(0.35F); ++step) {
+            testVehicle.step(drive, kPhysicsDt);
+            sample.downforceN = std::max(sample.downforceN, testVehicle.current().downforceN);
+            sample.centerOfPressure =
+                std::max(sample.centerOfPressure, testVehicle.current().aeroCenterOfPressure);
+        }
+        return sample;
+    };
+    const AeroSample speedwayAero = aeroPresetSample(0);
+    const AeroSample roadCourseAero = aeroPresetSample(1);
+    if (roadCourseAero.downforceN <= speedwayAero.downforceN * 1.12F ||
+        roadCourseAero.centerOfPressure <= speedwayAero.centerOfPressure + 0.03F) {
+        std::cerr << "Road-course aero preset did not increase downforce/front aero balance"
+                  << " speedwayDf=" << speedwayAero.downforceN
+                  << " roadDf=" << roadCourseAero.downforceN
+                  << " speedwayCop=" << speedwayAero.centerOfPressure
+                  << " roadCop=" << roadCourseAero.centerOfPressure << '\n';
         return 1;
     }
     if (vehicle.current().rearLeftWheelAngularVelocityRadPerSec <= 0.0F ||
