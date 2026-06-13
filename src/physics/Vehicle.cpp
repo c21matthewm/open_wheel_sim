@@ -123,6 +123,9 @@ struct WheelForce {
     float normalLoadN = 0.0F;
     float usage = 0.0F;
     float longitudinalSlip = 0.0F;
+    float pneumaticTrailM = 0.0F;
+    float aligningTrailM = 0.0F;
+    float aligningMomentNm = 0.0F;
 };
 
 struct SplitForce {
@@ -251,6 +254,9 @@ WheelForce resolveWheelForce(
     float wheelRadiusM,
     float camberAngleRadians,
     float camberStiffnessNPerRad,
+    bool frontWheel,
+    float pneumaticTrailMaxM,
+    float mechanicalTrailM,
     float corneringStiffness,
     float longitudinalStiffness,
     float normalLoadN,
@@ -313,6 +319,19 @@ WheelForce resolveWheelForce(
             lateralDemand,
             longitudinalFrictionLimit,
             lateralFrictionLimit);
+    float pneumaticTrailM = 0.0F;
+    float aligningTrailM = 0.0F;
+    float aligningMomentNm = 0.0F;
+    if (frontWheel) {
+        const float normalizedLateralSlip =
+            std::abs(relaxedSlipAngleRadians) / std::max(0.001F, lateralPeakSlipAngleRadians);
+        pneumaticTrailM = std::clamp(
+            pneumaticTrailMaxM * (1.0F - normalizedLateralSlip * normalizedLateralSlip),
+            -pneumaticTrailMaxM * 0.30F,
+            pneumaticTrailMaxM);
+        aligningTrailM = pneumaticTrailM + mechanicalTrailM;
+        aligningMomentNm = -aligningTrailM * localForce.lateralN;
+    }
 
     return {
         localForce.longitudinalN,
@@ -323,6 +342,9 @@ WheelForce resolveWheelForce(
         normalLoadN,
         localForce.usage,
         slipRatio,
+        pneumaticTrailM,
+        aligningTrailM,
+        aligningMomentNm,
     };
 }
 
@@ -839,6 +861,9 @@ void Vehicle::step(
         config_.wheelRadiusM,
         effectiveCamberForWheel(kFrontLeft),
         config_.tireCamberStiffnessNPerRad,
+        true,
+        config_.tirePneumaticTrailMaxM,
+        config_.tireMechanicalTrailM,
         frontWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kFrontLeft],
@@ -861,6 +886,9 @@ void Vehicle::step(
         config_.wheelRadiusM,
         effectiveCamberForWheel(kFrontRight),
         config_.tireCamberStiffnessNPerRad,
+        true,
+        config_.tirePneumaticTrailMaxM,
+        config_.tireMechanicalTrailM,
         frontWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kFrontRight],
@@ -883,6 +911,9 @@ void Vehicle::step(
         config_.wheelRadiusM,
         effectiveCamberForWheel(kRearLeft),
         config_.tireCamberStiffnessNPerRad,
+        false,
+        0.0F,
+        0.0F,
         rearWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearLeft],
@@ -905,6 +936,9 @@ void Vehicle::step(
         config_.wheelRadiusM,
         effectiveCamberForWheel(kRearRight),
         config_.tireCamberStiffnessNPerRad,
+        false,
+        0.0F,
+        0.0F,
         rearWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearRight],
@@ -1014,6 +1048,7 @@ void Vehicle::step(
         yawMoment +=
             wheelOffsetWorldZ[wheel] * wheelForceWorldX[wheel] -
             wheelOffsetWorldX[wheel] * wheelForceWorldZ[wheel];
+        yawMoment += wheelForces[wheel].aligningMomentNm;
     }
     current_.yawRate += yawMoment / std::max(1.0F, config_.yawInertiaKgM2) * safeDt;
     current_.yawRadians += current_.yawRate * safeDt;
@@ -1094,6 +1129,12 @@ void Vehicle::step(
     current_.frontRightThermalGrip = thermalGrip[kFrontRight];
     current_.rearLeftThermalGrip = thermalGrip[kRearLeft];
     current_.rearRightThermalGrip = thermalGrip[kRearRight];
+    current_.frontLeftPneumaticTrailM = frontLeft.pneumaticTrailM;
+    current_.frontRightPneumaticTrailM = frontRight.pneumaticTrailM;
+    current_.frontPneumaticTrailM =
+        (frontLeft.pneumaticTrailM + frontRight.pneumaticTrailM) * 0.5F;
+    current_.frontLeftAligningTrailM = frontLeft.aligningTrailM;
+    current_.frontRightAligningTrailM = frontRight.aligningTrailM;
     current_.engineForceN = driveTorqueTotal / std::max(0.05F, config_.wheelRadiusM);
     current_.brakeForceN = brakeInput * config_.brakeForceN;
     current_.dragForceN = dragForce;

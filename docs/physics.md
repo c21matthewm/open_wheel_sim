@@ -56,6 +56,23 @@ camber thrust cancels instead of creating artificial drift. The road-course
 setup uses more aggressive static camber than the speedway setup, but camber is
 still a setup constant rather than a suspension-kinematic value.
 
+Front tires also compute pneumatic trail in the tire solver:
+
+```text
+slip_normalized = abs(relaxed_slip_angle) / tires.lateral_peak_slip_angle_deg
+pneumatic_trail = clamp(
+    tires.pneumatic_trail_max_m * (1 - slip_normalized^2),
+    -tires.pneumatic_trail_max_m * 0.3,
+    tires.pneumatic_trail_max_m)
+aligning_trail = pneumatic_trail + tires.mechanical_trail_m
+aligning_moment = -aligning_trail * front_tire_lateral_force
+```
+
+That aligning moment is summed into chassis yaw along with the normal `r x F`
+tire force moments. The same solver-derived trail is exposed on `VehicleState`
+for force feedback, so FFB does not need to own a separate tire-trail model
+after physics has stepped.
+
 The front wheel forces are rotated by steering angle before forces and yaw
 moments are integrated. Keyboard steering also has two stability assists:
 `InputManager` slows keyboard steering rate as vehicle speed rises, and
@@ -217,8 +234,9 @@ with 360 Hz as the default. Render timing does not alter the physics timestep.
   terrain height samples, potholes, curbs, or arbitrary 3D mesh contacts yet.
 - The tire model has relaxation length, dynamic slip ratio, combined-slip
   limiting, static setup camber thrust, and a lightweight slip/usage-driven tire
-  temperature and thermal grip state, but no pressure, wear, carcass modes,
-  dynamic camber gain, or contact-patch deformation model.
+  temperature and thermal grip state. Pneumatic trail is modeled for the front
+  tires only. There is still no pressure, wear, carcass modes, dynamic camber
+  gain, or contact-patch deformation model.
 - Brake discs are currently clean metallic render parts, not thermal brake
   simulations.
 - Tire smoke/dust and undertray sparks are renderer-side presentation effects,

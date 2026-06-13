@@ -94,6 +94,8 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.camberAngleRearRadians, -0.017F) ||
         !near(vehicleConfig.roadCourseCamberAngleFrontRadians, -0.070F) ||
         !near(vehicleConfig.roadCourseCamberAngleRearRadians, -0.030F) ||
+        !near(vehicleConfig.tirePneumaticTrailMaxM, 0.018F) ||
+        !near(vehicleConfig.tireMechanicalTrailM, 0.010F) ||
         !near(vehicleConfig.tireRelaxationLengthM, 0.12F) ||
         !near(vehicleConfig.frontSpringRateNPerM, 100000.0F) ||
         !near(vehicleConfig.rearStaticRideHeightM, 0.060F) ||
@@ -265,15 +267,60 @@ int main(int argc, char** argv) {
     rigidBodyInput.steer = 0.70F;
     float maximumYawRate = 0.0F;
     float maximumFrontLateralForceN = 0.0F;
+    float maximumPneumaticTrailM = 0.0F;
+    float minimumPneumaticTrailM = 1.0F;
     for (int step = 0; step < stepsForSeconds(0.55F); ++step) {
         rigidBodyVehicle.step(rigidBodyInput, kPhysicsDt);
         maximumYawRate = std::max(maximumYawRate, std::abs(rigidBodyVehicle.current().yawRate));
         maximumFrontLateralForceN = std::max(
             maximumFrontLateralForceN,
             std::abs(rigidBodyVehicle.current().frontLateralForceN));
+        maximumPneumaticTrailM =
+            std::max(maximumPneumaticTrailM, rigidBodyVehicle.current().frontPneumaticTrailM);
+        minimumPneumaticTrailM =
+            std::min(minimumPneumaticTrailM, rigidBodyVehicle.current().frontPneumaticTrailM);
     }
     if (maximumYawRate <= 0.03F || maximumFrontLateralForceN <= 250.0F) {
         std::cerr << "Four-corner rigid-body tire forces did not create chassis yaw\n";
+        return 1;
+    }
+    if (maximumPneumaticTrailM <= 0.0F ||
+        maximumPneumaticTrailM > vehicleConfig.tirePneumaticTrailMaxM + 0.001F ||
+        minimumPneumaticTrailM >= maximumPneumaticTrailM * 0.98F) {
+        std::cerr << "Pneumatic trail telemetry did not build and collapse with front slip"
+                  << " minTrail=" << minimumPneumaticTrailM
+                  << " maxTrail=" << maximumPneumaticTrailM << '\n';
+        return 1;
+    }
+
+    auto yawResponseForTrail = [&](const sim::VehicleConfig& testConfig) {
+        sim::Vehicle testVehicle(testConfig);
+        sim::InputActions drive;
+        drive.throttle = 1.0F;
+        for (int step = 0; step < stepsForSeconds(1.8F); ++step) {
+            testVehicle.step(drive, kPhysicsDt);
+        }
+        drive.throttle = 0.30F;
+        drive.steer = 0.75F;
+        float peakYawRate = 0.0F;
+        for (int step = 0; step < stepsForSeconds(0.75F); ++step) {
+            testVehicle.step(drive, kPhysicsDt);
+            peakYawRate = std::max(peakYawRate, std::abs(testVehicle.current().yawRate));
+        }
+        return peakYawRate;
+    };
+    sim::VehicleConfig zeroTrailConfig = vehicleConfig;
+    zeroTrailConfig.tirePneumaticTrailMaxM = 0.0F;
+    zeroTrailConfig.tireMechanicalTrailM = 0.0F;
+    sim::VehicleConfig strongTrailConfig = vehicleConfig;
+    strongTrailConfig.tirePneumaticTrailMaxM = 0.060F;
+    strongTrailConfig.tireMechanicalTrailM = 0.040F;
+    const float zeroTrailYawRate = yawResponseForTrail(zeroTrailConfig);
+    const float strongTrailYawRate = yawResponseForTrail(strongTrailConfig);
+    if (std::abs(strongTrailYawRate - zeroTrailYawRate) <= 0.006F) {
+        std::cerr << "Aligning trail did not measurably affect yaw response"
+                  << " zeroTrailYaw=" << zeroTrailYawRate
+                  << " strongTrailYaw=" << strongTrailYawRate << '\n';
         return 1;
     }
 

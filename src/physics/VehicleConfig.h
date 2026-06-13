@@ -38,6 +38,8 @@ struct VehicleConfig {
     float speedwayCamberAngleRearRadians = -0.017F;
     float roadCourseCamberAngleFrontRadians = -0.070F;
     float roadCourseCamberAngleRearRadians = -0.030F;
+    float tirePneumaticTrailMaxM = 0.018F;
+    float tireMechanicalTrailM = 0.010F;
     float tireRelaxationLengthM = 0.12F;
     float tireLongitudinalStiffness = 78000.0F;
     float frontRollStiffnessFraction = 0.52F;

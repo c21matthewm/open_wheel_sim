@@ -101,6 +101,14 @@ void VehicleConfig::load(const ConfigFile& config) {
         0.18F);
     camberAngleFrontRadians = speedwayCamberAngleFrontRadians;
     camberAngleRearRadians = speedwayCamberAngleRearRadians;
+    tirePneumaticTrailMaxM = std::clamp(
+        config.getFloat("tires.pneumatic_trail_max_m", tirePneumaticTrailMaxM),
+        0.0F,
+        0.12F);
+    tireMechanicalTrailM = std::clamp(
+        config.getFloat("tires.mechanical_trail_m", tireMechanicalTrailM),
+        0.0F,
+        0.12F);
     tireRelaxationLengthM =
         std::clamp(config.getFloat("tires.relaxation_length_m", tireRelaxationLengthM), 0.03F, 0.60F);
     tireLongitudinalStiffness = std::max(
