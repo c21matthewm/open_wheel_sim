@@ -523,10 +523,10 @@ tire temperature/thermal-grip telemetry, generated PBR texture maps,
 skybox-backed environment lighting/reflections, removed exhaust flame/heat
 shimmer effects, the MoTeC-style HUD pass, the R-1 render-performance
 shadow-map recovery pass, the R-2 MSAA recovery pass, the R-3 bloom-chain
-simplification pass, the R-4 HUD glass tap-count reduction, and the R-5
+simplification pass, the R-4 HUD glass tap-count reduction, the R-5
 shadow-update interval pass, the R-6 half-precision bloom shader pass, the
 P-1 degressive tire load-sensitivity pass, the P-2 static camber-thrust pass,
-the P-3 pneumatic-trail aligning-moment pass, and the P-4 load-dependent
+the P-3 pneumatic-trail aligning-moment pass, the P-4 load-dependent
 relaxation-length pass, and the P-5 config-backed aero package pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
@@ -588,11 +588,11 @@ relaxation-length pass, and the P-5 config-backed aero package pass:
 - after the R-6 half-precision bloom shader change, the benchmark exited with:
   `FPS 49.5`, `FRAME 20.21 ms`, `PHYS 0.034 ms`, `RENDER 19.78 ms`, and
   `PHYS_STEPS 358.4/s`.
-- final verification after the documentation consistency pass rebuilt cleanly,
-  passed `ctest`, and benchmarked at `FPS 49.0`, `FRAME 20.39 ms`,
-  `PHYS 0.032 ms`, `RENDER 19.96 ms`, and `PHYS_STEPS 358.4/s`. This is a
-  clear recovery from the 42.6 FPS baseline, but it is not yet a stable 60 FPS
-  result on this machine.
+- final verification after the P-1 through P-5 physics upgrade rebuilt cleanly,
+  passed `ctest`, and benchmarked at `FPS 43.0`, `FRAME 23.27 ms`,
+  `PHYS 0.038 ms`, `RENDER 22.41 ms`, and `PHYS_STEPS 358.4/s`. The fixed
+  360 Hz physics loop remained stable and inexpensive; this run did not reach a
+  stable 60 FPS render cadence on this machine.
 - the self-contained Release app was approximately 11 MB, under the current
   100 MB app/asset budget
 - the full asset folder was approximately 8.3 MB; generated OBJ meshes were

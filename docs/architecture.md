@@ -19,11 +19,14 @@ loads, tire usage, drivetrain force, braking force, ride heights, hub travel,
 chassis heave/pitch/roll, drag, ride-height-sensitive downforce, RPM, gear,
 dynamic wheel angular velocity, and visual wheel rotation. It is now a
 lightweight sprung/unsprung four-corner model with banked-track lateral gravity
-and effective-normal-load adjustment, tire relaxation length, dynamic slip
+and effective-normal-load adjustment, degressive load-sensitive tire limits,
+static mirrored camber thrust, solver-owned front pneumatic/mechanical trail
+aligning moment, load/speed-dependent tire relaxation length, dynamic slip
 ratio, Pacejka-lite tire force curves, suspension spring/damper/anti-roll-bar
 loads, IMS-stacked gearing, and analytic current-platform ground-effect aero
-with CoP migration. The implementation remains compact and replaceable rather
-than a full commercial vehicle-dynamics solver.
+with config-backed Speedway/Road Course package presets and CoP migration. The
+implementation remains compact and replaceable rather than a full commercial
+vehicle-dynamics solver.
 
 `Track` defines the procedural stadium oval and is the shared source of truth
 for centerline poses, banking, surface classification, lap progress, and reset
