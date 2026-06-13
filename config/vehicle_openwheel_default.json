@@ -35,7 +35,9 @@
     "road_course_camber_angle_rear_rad": -0.030,
     "pneumatic_trail_max_m": 0.018,
     "mechanical_trail_m": 0.010,
-    "relaxation_length_m": 0.12,
+    "relaxation_length_base_m": 0.40,
+    "relaxation_length_min_m": 0.15,
+    "relaxation_length_max_m": 0.90,
     "longitudinal_stiffness_n": 78000.0,
     "front_roll_stiffness_fraction": 0.52
   },

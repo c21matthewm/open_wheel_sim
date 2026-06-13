@@ -73,6 +73,23 @@ tire force moments. The same solver-derived trail is exposed on `VehicleState`
 for force feedback, so FFB does not need to own a separate tire-trail model
 after physics has stepped.
 
+Relaxed lateral slip uses a live relaxation length instead of one fixed value:
+
+```text
+load_scale = normal_load / tires.load_reference_normal_n
+speed_factor = 1 / max(0.1, abs(tire_longitudinal_speed) / 30)
+relaxation_length = clamp(
+    tires.relaxation_length_base_m * load_scale * speed_factor,
+    tires.relaxation_length_min_m,
+    tires.relaxation_length_max_m)
+tau = relaxation_length / max(0.01, abs(tire_longitudinal_speed))
+relaxed_slip += (instantaneous_slip - relaxed_slip) * (1 - exp(-dt / tau))
+```
+
+This makes high-load tires build lateral force more gradually while preserving
+faster response where load and speed are lower. The live per-wheel relaxation
+lengths are exposed in telemetry.
+
 The front wheel forces are rotated by steering angle before forces and yaw
 moments are integrated. Keyboard steering also has two stability assists:
 `InputManager` slows keyboard steering rate as vehicle speed rises, and
@@ -232,7 +249,7 @@ with 360 Hz as the default. Render timing does not alter the physics timestep.
 
 - Suspension runs against a smooth local track plane; there are no per-wheel
   terrain height samples, potholes, curbs, or arbitrary 3D mesh contacts yet.
-- The tire model has relaxation length, dynamic slip ratio, combined-slip
+- The tire model has load/speed-dependent relaxation length, dynamic slip ratio, combined-slip
   limiting, static setup camber thrust, and a lightweight slip/usage-driven tire
   temperature and thermal grip state. Pneumatic trail is modeled for the front
   tires only. There is still no pressure, wear, carcass modes, dynamic camber

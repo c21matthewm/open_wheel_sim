@@ -109,8 +109,20 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("tires.mechanical_trail_m", tireMechanicalTrailM),
         0.0F,
         0.12F);
-    tireRelaxationLengthM =
-        std::clamp(config.getFloat("tires.relaxation_length_m", tireRelaxationLengthM), 0.03F, 0.60F);
+    const float legacyRelaxationLength =
+        config.getFloat("tires.relaxation_length_m", tireRelaxationLengthBaseM);
+    tireRelaxationLengthBaseM = std::clamp(
+        config.getFloat("tires.relaxation_length_base_m", legacyRelaxationLength),
+        0.03F,
+        2.0F);
+    tireRelaxationLengthMinM = std::clamp(
+        config.getFloat("tires.relaxation_length_min_m", tireRelaxationLengthMinM),
+        0.02F,
+        tireRelaxationLengthBaseM);
+    tireRelaxationLengthMaxM = std::clamp(
+        config.getFloat("tires.relaxation_length_max_m", tireRelaxationLengthMaxM),
+        tireRelaxationLengthMinM,
+        3.0F);
     tireLongitudinalStiffness = std::max(
         1000.0F,
         config.getFloat("tires.longitudinal_stiffness_n", tireLongitudinalStiffness));

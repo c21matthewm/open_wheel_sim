@@ -131,7 +131,8 @@ The current app can:
   elastic lateral and longitudinal load transfer, degressive tire load
   sensitivity, static setup camber thrust applied before combined-slip limiting,
   front pneumatic/mechanical trail aligning moment in the tire solver,
-  transient tire relaxation length, Pacejka-lite tire peak/falloff force curves,
+  load/speed-dependent transient tire relaxation length,
+  Pacejka-lite tire peak/falloff force curves,
   true force-at-corner rigid-body yaw integration from each tire's `r x F`
   moment plus front aligning moment, physical
   per-wheel angular velocity/inertia, wheelspin/lockup slip ratio, combined
@@ -258,12 +259,13 @@ The current app can:
   panels, but the blur is a compact 7-tap shader pass rather than a
   large-radius production separable blur or full optical glass model.
 - The current tire model uses relaxation length for lateral slip, dynamic slip
-  ratio for longitudinal force, a compact Pacejka-lite peak/falloff curve,
-  degressive load sensitivity, static setup camber thrust, friction-circle
-  combined-slip limiting, front pneumatic/mechanical trail aligning moment, and
-  a simple slip/usage-driven tire temperature/thermal-grip state. It still has
-  no pressure, wear, carcass modes, dynamic camber gain, rear pneumatic trail,
-  contact-patch deformation, or fully validated tire test data.
+  ratio for longitudinal force, load/speed-dependent relaxation length, a
+  compact Pacejka-lite peak/falloff curve, degressive load sensitivity, static
+  setup camber thrust, friction-circle combined-slip limiting, front
+  pneumatic/mechanical trail aligning moment, and a simple slip/usage-driven
+  tire temperature/thermal-grip state. It still has no pressure, wear, carcass
+  modes, dynamic camber gain, rear pneumatic trail, contact-patch deformation,
+  or fully validated tire test data.
 - Wheel angular velocity supports wheelspin and lockup behavior. Engine RPM is
   coupled to driven wheel speed with an idle clamp for launchability; a full
   clutch, anti-stall, starter, and engine-stall simulation is not implemented.
@@ -372,9 +374,9 @@ Physics behavior is not tied to the render frame rate.
   grass-trap rolling resistance and speed-sensitive speed bleed, checkpoint lap
   timing, and in-memory ghost-lap recording/playback
 - `src/physics`: config-driven sprung/unsprung vehicle state, four-corner
-  spring/damper/ARB suspension loads, tire vertical stiffness, transient tire
-  relaxation, Pacejka-lite tire forces with peak/falloff behavior, degressive
-  load-sensitive friction limits, static mirrored camber thrust, solver-owned
+  spring/damper/ARB suspension loads, tire vertical stiffness,
+  load/speed-dependent transient tire relaxation, Pacejka-lite tire forces with
+  peak/falloff behavior, degressive load-sensitive friction limits, static mirrored camber thrust, solver-owned
   front pneumatic/mechanical trail telemetry and yaw aligning moment,
   combined-slip tire forces with separate longitudinal/lateral friction limits,
   force-at-corner rigid-body tire torque integration, dynamic tire
@@ -446,7 +448,7 @@ scheme for `LightweightSim` when the Xcode generator is available.
   IMS-stacked geometric speedway gearing, automatic transmission toggle,
   Pacejka-lite tire curve shape, degressive tire load-sensitivity coefficients,
   speedway and road-course static camber setup values, tire pneumatic and
-  mechanical trail values,
+  mechanical trail values, load/speed-dependent tire relaxation length values,
   ground-effect aero/CoP sensitivity, resistance parameters, and high-speed
   steering cap values; the default high-speed steering scale is `0.22`, the
   default 6th gear redlines at about 239 mph with the configured tire radius,
@@ -520,7 +522,8 @@ shadow-map recovery pass, the R-2 MSAA recovery pass, the R-3 bloom-chain
 simplification pass, the R-4 HUD glass tap-count reduction, and the R-5
 shadow-update interval pass, the R-6 half-precision bloom shader pass, the
 P-1 degressive tire load-sensitivity pass, the P-2 static camber-thrust pass,
-and the P-3 pneumatic-trail aligning-moment pass:
+the P-3 pneumatic-trail aligning-moment pass, and the P-4 load-dependent
+relaxation-length pass:
 
 - `python3 scripts/generate_geometry.py` regenerated `assets/meshes/car.obj`,
   `assets/meshes/wheel.obj`, and `assets/meshes/steering_wheel.obj`
@@ -543,6 +546,7 @@ and the P-3 pneumatic-trail aligning-moment pass:
   degressive load-sensitivity config and high-load cornering regression checks,
   camber config, straight-line camber-cancellation, and camber-thrust regression checks,
   pneumatic-trail telemetry and aligning-yaw-moment regression checks,
+  load-dependent relaxation-length config and telemetry regression checks,
   dynamic tire temperature/thermal-grip telemetry checks, a rigid-body steering/yaw
   regression check, manual shift-cooldown and manual limiter regression checks,
   and a full-throttle launch regression check that prevents automatic shifting

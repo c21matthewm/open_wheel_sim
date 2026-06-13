@@ -92,6 +92,10 @@ struct VehicleState {
     float frontRightPneumaticTrailM = 0.0F;
     float frontLeftAligningTrailM = 0.0F;
     float frontRightAligningTrailM = 0.0F;
+    float frontLeftRelaxationLengthM = 0.0F;
+    float frontRightRelaxationLengthM = 0.0F;
+    float rearLeftRelaxationLengthM = 0.0F;
+    float rearRightRelaxationLengthM = 0.0F;
     float engineForceN = 0.0F;
     float brakeForceN = 0.0F;
     float dragForceN = 0.0F;

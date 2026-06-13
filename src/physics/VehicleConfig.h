@@ -40,7 +40,9 @@ struct VehicleConfig {
     float roadCourseCamberAngleRearRadians = -0.030F;
     float tirePneumaticTrailMaxM = 0.018F;
     float tireMechanicalTrailM = 0.010F;
-    float tireRelaxationLengthM = 0.12F;
+    float tireRelaxationLengthBaseM = 0.40F;
+    float tireRelaxationLengthMinM = 0.15F;
+    float tireRelaxationLengthMaxM = 0.90F;
     float tireLongitudinalStiffness = 78000.0F;
     float frontRollStiffnessFraction = 0.52F;
     float frontSpringRateNPerM = 100000.0F;

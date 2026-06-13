@@ -240,9 +240,28 @@ float relaxedSlipAngle(
             0.70F);
     }
 
-    const float derivative =
-        (tireLateralSpeed - absoluteLongitudinalSpeed * previousSlipAngle) / safeSigma;
-    return std::clamp(previousSlipAngle + derivative * deltaSeconds, -0.70F, 0.70F);
+    const float tauSeconds = safeSigma / std::max(0.01F, absoluteLongitudinalSpeed);
+    const float response = 1.0F - std::exp(-deltaSeconds / std::max(0.001F, tauSeconds));
+    return std::clamp(
+        previousSlipAngle + (instantaneousSlip - previousSlipAngle) * response,
+        -0.70F,
+        0.70F);
+}
+
+float liveRelaxationLength(
+    float normalLoadN,
+    float referenceLoadN,
+    float tireLongitudinalSpeed,
+    float baseRelaxationM,
+    float minRelaxationM,
+    float maxRelaxationM) {
+    const float normalizedLoad = normalLoadN / std::max(1.0F, referenceLoadN);
+    const float speedFactor =
+        1.0F / std::max(0.10F, std::abs(tireLongitudinalSpeed) / 30.0F);
+    return std::clamp(
+        baseRelaxationM * normalizedLoad * speedFactor,
+        minRelaxationM,
+        maxRelaxationM);
 }
 
 WheelForce resolveWheelForce(
@@ -805,6 +824,7 @@ void Vehicle::step(
     std::array<float, kWheelCount> bodyLateralSpeed{};
     std::array<float, kWheelCount> tireLongitudinalSpeed{};
     std::array<float, kWheelCount> tireLateralSpeed{};
+    std::array<float, kWheelCount> tireRelaxationLength{};
     std::array<float, kWheelCount> wheelOffsetWorldX{};
     std::array<float, kWheelCount> wheelOffsetWorldZ{};
     for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
@@ -825,11 +845,18 @@ void Vehicle::step(
             bodyLongitudinalSpeed[wheel] * cosSteer + bodyLateralSpeed[wheel] * sinSteer;
         tireLateralSpeed[wheel] =
             bodyLateralSpeed[wheel] * cosSteer - bodyLongitudinalSpeed[wheel] * sinSteer;
+        tireRelaxationLength[wheel] = liveRelaxationLength(
+            tireNormalLoad[wheel],
+            config_.tireLoadReferenceNormalN,
+            tireLongitudinalSpeed[wheel],
+            config_.tireRelaxationLengthBaseM,
+            config_.tireRelaxationLengthMinM,
+            config_.tireRelaxationLengthMaxM);
         relaxedSlip[wheel] = relaxedSlipAngle(
             relaxedSlip[wheel],
             tireLongitudinalSpeed[wheel],
             tireLateralSpeed[wheel],
-            config_.tireRelaxationLengthM,
+            tireRelaxationLength[wheel],
             safeDt);
 
         float opposeSign = signOrZero(wheelOmega[wheel], 0.08F);
@@ -1135,6 +1162,10 @@ void Vehicle::step(
         (frontLeft.pneumaticTrailM + frontRight.pneumaticTrailM) * 0.5F;
     current_.frontLeftAligningTrailM = frontLeft.aligningTrailM;
     current_.frontRightAligningTrailM = frontRight.aligningTrailM;
+    current_.frontLeftRelaxationLengthM = tireRelaxationLength[kFrontLeft];
+    current_.frontRightRelaxationLengthM = tireRelaxationLength[kFrontRight];
+    current_.rearLeftRelaxationLengthM = tireRelaxationLength[kRearLeft];
+    current_.rearRightRelaxationLengthM = tireRelaxationLength[kRearRight];
     current_.engineForceN = driveTorqueTotal / std::max(0.05F, config_.wheelRadiusM);
     current_.brakeForceN = brakeInput * config_.brakeForceN;
     current_.dragForceN = dragForce;

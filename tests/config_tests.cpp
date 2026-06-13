@@ -96,7 +96,9 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.roadCourseCamberAngleRearRadians, -0.030F) ||
         !near(vehicleConfig.tirePneumaticTrailMaxM, 0.018F) ||
         !near(vehicleConfig.tireMechanicalTrailM, 0.010F) ||
-        !near(vehicleConfig.tireRelaxationLengthM, 0.12F) ||
+        !near(vehicleConfig.tireRelaxationLengthBaseM, 0.40F) ||
+        !near(vehicleConfig.tireRelaxationLengthMinM, 0.15F) ||
+        !near(vehicleConfig.tireRelaxationLengthMaxM, 0.90F) ||
         !near(vehicleConfig.frontSpringRateNPerM, 100000.0F) ||
         !near(vehicleConfig.rearStaticRideHeightM, 0.060F) ||
         !near(vehicleConfig.wheelInertiaKgM2, 1.25F) ||
@@ -269,6 +271,8 @@ int main(int argc, char** argv) {
     float maximumFrontLateralForceN = 0.0F;
     float maximumPneumaticTrailM = 0.0F;
     float minimumPneumaticTrailM = 1.0F;
+    float maximumRelaxationLengthM = 0.0F;
+    float minimumRelaxationLengthM = 10.0F;
     for (int step = 0; step < stepsForSeconds(0.55F); ++step) {
         rigidBodyVehicle.step(rigidBodyInput, kPhysicsDt);
         maximumYawRate = std::max(maximumYawRate, std::abs(rigidBodyVehicle.current().yawRate));
@@ -279,6 +283,22 @@ int main(int argc, char** argv) {
             std::max(maximumPneumaticTrailM, rigidBodyVehicle.current().frontPneumaticTrailM);
         minimumPneumaticTrailM =
             std::min(minimumPneumaticTrailM, rigidBodyVehicle.current().frontPneumaticTrailM);
+        maximumRelaxationLengthM = std::max(
+            maximumRelaxationLengthM,
+            std::max({
+                rigidBodyVehicle.current().frontLeftRelaxationLengthM,
+                rigidBodyVehicle.current().frontRightRelaxationLengthM,
+                rigidBodyVehicle.current().rearLeftRelaxationLengthM,
+                rigidBodyVehicle.current().rearRightRelaxationLengthM,
+            }));
+        minimumRelaxationLengthM = std::min(
+            minimumRelaxationLengthM,
+            std::min({
+                rigidBodyVehicle.current().frontLeftRelaxationLengthM,
+                rigidBodyVehicle.current().frontRightRelaxationLengthM,
+                rigidBodyVehicle.current().rearLeftRelaxationLengthM,
+                rigidBodyVehicle.current().rearRightRelaxationLengthM,
+            }));
     }
     if (maximumYawRate <= 0.03F || maximumFrontLateralForceN <= 250.0F) {
         std::cerr << "Four-corner rigid-body tire forces did not create chassis yaw\n";
@@ -290,6 +310,14 @@ int main(int argc, char** argv) {
         std::cerr << "Pneumatic trail telemetry did not build and collapse with front slip"
                   << " minTrail=" << minimumPneumaticTrailM
                   << " maxTrail=" << maximumPneumaticTrailM << '\n';
+        return 1;
+    }
+    if (minimumRelaxationLengthM < vehicleConfig.tireRelaxationLengthMinM - 0.001F ||
+        maximumRelaxationLengthM > vehicleConfig.tireRelaxationLengthMaxM + 0.001F ||
+        maximumRelaxationLengthM <= minimumRelaxationLengthM + 0.02F) {
+        std::cerr << "Load-dependent relaxation length telemetry did not vary within clamps"
+                  << " minRelax=" << minimumRelaxationLengthM
+                  << " maxRelax=" << maximumRelaxationLengthM << '\n';
         return 1;
     }
 
