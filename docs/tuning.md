@@ -27,6 +27,10 @@ current run. These runtime changes are not written back to JSON yet.
   the Pacejka-lite curve reaches peak grip.
 - `tires.longitudinal_peak_slip_ratio`: approximate drive/brake slip ratio
   where longitudinal grip peaks.
+- `tires.longitudinal_grip_fraction`: longitudinal peak grip relative to
+  lateral peak grip inside the combined-slip friction ellipse. Lower values
+  make braking/throttle consume the longitudinal budget sooner while preserving
+  more lateral authority.
 - `tires.curve_shape_factor`, `curve_curvature_factor`, `post_peak_falloff`:
   compact tire-curve shape controls for peak sharpness and post-peak falloff.
 - `tires.thermal_optimal_c`: tire temperature where thermal grip peaks.

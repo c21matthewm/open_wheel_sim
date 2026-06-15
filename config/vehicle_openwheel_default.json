@@ -39,6 +39,7 @@
     "relaxation_length_min_m": 0.15,
     "relaxation_length_max_m": 0.90,
     "longitudinal_stiffness_n": 78000.0,
+    "longitudinal_grip_fraction": 0.93,
     "thermal_optimal_c": 95.0,
     "thermal_window_c": 35.0,
     "thermal_grip_min": 0.72,

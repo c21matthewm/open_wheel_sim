@@ -59,6 +59,7 @@ struct VehicleConfig {
     float tireRelaxationLengthMinM = 0.15F;
     float tireRelaxationLengthMaxM = 0.90F;
     float tireLongitudinalStiffness = 78000.0F;
+    float tireLongitudinalGripFraction = 0.93F;
     float tireThermalOptimalC = 95.0F;
     float tireThermalWindowC = 35.0F;
     float tireThermalGripMin = 0.72F;

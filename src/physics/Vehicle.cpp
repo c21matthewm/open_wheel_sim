@@ -315,6 +315,7 @@ WheelForce resolveWheelForce(
     float referenceLoadN,
     float lateralFriction,
     float longitudinalFriction,
+    float longitudinalGripFraction,
     float lateralPeakSlipAngleRadians,
     float longitudinalPeakSlipRatio,
     float tireCurveShapeFactor,
@@ -337,7 +338,8 @@ WheelForce resolveWheelForce(
             normalLoadN,
             referenceLoadN,
             loadSensitivityCoeff,
-            loadSensitivityMinEfficiency);
+            loadSensitivityMinEfficiency) *
+        longitudinalGripFraction;
     const float lateralDemand =
         tireLateralForce(
             relaxedSlipAngleRadians,
@@ -966,6 +968,7 @@ void Vehicle::step(
         tireLoadReferenceN,
         lateralEffectiveFriction * thermalGrip[kFrontLeft],
         longitudinalEffectiveFriction * thermalGrip[kFrontLeft],
+        config_.tireLongitudinalGripFraction,
         config_.lateralPeakSlipAngleRadians,
         config_.longitudinalPeakSlipRatio,
         config_.tireCurveShapeFactor,
@@ -988,6 +991,7 @@ void Vehicle::step(
         tireLoadReferenceN,
         lateralEffectiveFriction * thermalGrip[kFrontRight],
         longitudinalEffectiveFriction * thermalGrip[kFrontRight],
+        config_.tireLongitudinalGripFraction,
         config_.lateralPeakSlipAngleRadians,
         config_.longitudinalPeakSlipRatio,
         config_.tireCurveShapeFactor,
@@ -1010,6 +1014,7 @@ void Vehicle::step(
         tireLoadReferenceN,
         lateralEffectiveFriction * thermalGrip[kRearLeft],
         longitudinalEffectiveFriction * thermalGrip[kRearLeft],
+        config_.tireLongitudinalGripFraction,
         config_.lateralPeakSlipAngleRadians,
         config_.longitudinalPeakSlipRatio,
         config_.tireCurveShapeFactor,
@@ -1032,6 +1037,7 @@ void Vehicle::step(
         tireLoadReferenceN,
         lateralEffectiveFriction * thermalGrip[kRearRight],
         longitudinalEffectiveFriction * thermalGrip[kRearRight],
+        config_.tireLongitudinalGripFraction,
         config_.lateralPeakSlipAngleRadians,
         config_.longitudinalPeakSlipRatio,
         config_.tireCurveShapeFactor,

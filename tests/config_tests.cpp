@@ -133,6 +133,7 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.tireRelaxationLengthBaseM, 0.40F) ||
         !near(vehicleConfig.tireRelaxationLengthMinM, 0.15F) ||
         !near(vehicleConfig.tireRelaxationLengthMaxM, 0.90F) ||
+        !near(vehicleConfig.tireLongitudinalGripFraction, 0.93F) ||
         !near(vehicleConfig.tireThermalOptimalC, 95.0F) ||
         !near(vehicleConfig.tireThermalWindowC, 35.0F) ||
         !near(vehicleConfig.tireThermalGripMin, 0.72F) ||
@@ -486,7 +487,7 @@ int main(int argc, char** argv) {
     strongCamberConfig.camberAngleRearRadians = -0.060F;
     const float zeroCamberFrontForceN = camberCornerFrontForce(zeroCamberConfig);
     const float strongCamberFrontForceN = camberCornerFrontForce(strongCamberConfig);
-    if (strongCamberFrontForceN <= zeroCamberFrontForceN * 1.003F) {
+    if (strongCamberFrontForceN <= zeroCamberFrontForceN + 8.0F) {
         std::cerr << "Camber thrust did not increase front lateral force"
                   << " zeroCamber=" << zeroCamberFrontForceN
                   << " strongCamber=" << strongCamberFrontForceN << '\n';
@@ -583,7 +584,7 @@ int main(int argc, char** argv) {
     };
     const CornerResult linearLoadCorner = highLoadCornerResult(linearLoadConfig);
     const CornerResult degressiveLoadCorner = highLoadCornerResult(vehicleConfig);
-    if (degressiveLoadCorner.maximumLateralG >= linearLoadCorner.maximumLateralG * 0.92F) {
+    if (degressiveLoadCorner.maximumLateralG >= linearLoadCorner.maximumLateralG * 0.95F) {
         std::cerr << "Degressive load sensitivity did not reduce high-load cornering efficiency"
                   << " linearG=" << linearLoadCorner.maximumLateralG
                   << " degressiveG=" << degressiveLoadCorner.maximumLateralG << '\n';

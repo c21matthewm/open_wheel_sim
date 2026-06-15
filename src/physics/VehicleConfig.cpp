@@ -205,6 +205,10 @@ void VehicleConfig::load(const ConfigFile& config) {
     tireLongitudinalStiffness = std::max(
         1000.0F,
         config.getFloat("tires.longitudinal_stiffness_n", tireLongitudinalStiffness));
+    tireLongitudinalGripFraction = std::clamp(
+        config.getFloat("tires.longitudinal_grip_fraction", tireLongitudinalGripFraction),
+        0.50F,
+        1.10F);
     tireThermalOptimalC =
         std::clamp(config.getFloat("tires.thermal_optimal_c", tireThermalOptimalC), 40.0F, 150.0F);
     tireThermalWindowC =

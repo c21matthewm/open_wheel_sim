@@ -138,8 +138,8 @@ The current app can:
   longitudinal slip-ratio relaxation for progressive wheelspin/lockup buildup,
   true force-at-corner rigid-body yaw integration from each tire's `r x F`
   moment plus front aligning moment, physical
-  per-wheel angular velocity/inertia, wheelspin/lockup slip ratio, combined
-  grip/friction-circle limiting, brake bias, config-driven fixed-size
+  per-wheel angular velocity/inertia, wheelspin/lockup slip ratio, asymmetric
+  combined-slip friction-ellipse limiting, brake bias, config-driven fixed-size
   piecewise-linear engine torque curve, IMS-stacked geometric drivetrain
   gearing that drops 12,000 RPM shifts to roughly 9,500 RPM, automatic shift
   cooldown, smooth manual-mode RPM limiter bounce, RPM, automatic upshift

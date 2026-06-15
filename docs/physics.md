@@ -30,10 +30,15 @@ stiffness and peak slip, `C` is `tires.curve_shape_factor`, and `E` is
 the peak so the edge of grip is progressive instead of an abrupt clamp.
 
 Longitudinal drive and brake demand then share the same wheel grip budget
-through a combined-slip friction ellipse:
+through a combined-slip friction ellipse. Lateral grip uses the full tire
+friction limit while longitudinal grip is scaled by
+`tires.longitudinal_grip_fraction`:
 
 ```text
-usage = sqrt((longitudinal_demand / limit)^2 + (lateral_demand / limit)^2)
+longitudinal_limit = friction_limit * tires.longitudinal_grip_fraction
+lateral_limit = friction_limit
+usage = sqrt((longitudinal_demand / longitudinal_limit)^2
+             + (lateral_demand / lateral_limit)^2)
 if usage > 1, scale both force components down by 1 / usage
 ```
 
