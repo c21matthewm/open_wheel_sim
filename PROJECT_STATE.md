@@ -132,7 +132,7 @@ The current app can:
   wheel hubs, spring/damper/anti-roll-bar loads, tire vertical stiffness,
   elastic lateral and longitudinal load transfer, degressive tire load
   sensitivity, static setup camber thrust applied before combined-slip limiting,
-  front pneumatic/mechanical trail aligning moment in the tire solver,
+  front and rear pneumatic/mechanical trail aligning moment in the tire solver,
   load/speed-dependent transient tire relaxation length,
   Pacejka-lite tire peak/falloff force curves,
   longitudinal slip-ratio relaxation for progressive wheelspin/lockup buildup,

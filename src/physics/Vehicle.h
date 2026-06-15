@@ -94,10 +94,15 @@ struct VehicleState {
     float rearLeftThermalGrip = 1.0F;
     float rearRightThermalGrip = 1.0F;
     float frontPneumaticTrailM = 0.0F;
+    float rearPneumaticTrailM = 0.0F;
     float frontLeftPneumaticTrailM = 0.0F;
     float frontRightPneumaticTrailM = 0.0F;
+    float rearLeftPneumaticTrailM = 0.0F;
+    float rearRightPneumaticTrailM = 0.0F;
     float frontLeftAligningTrailM = 0.0F;
     float frontRightAligningTrailM = 0.0F;
+    float rearLeftAligningTrailM = 0.0F;
+    float rearRightAligningTrailM = 0.0F;
     float frontLeftRelaxationLengthM = 0.0F;
     float frontRightRelaxationLengthM = 0.0F;
     float rearLeftRelaxationLengthM = 0.0F;

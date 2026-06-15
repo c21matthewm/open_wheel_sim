@@ -345,6 +345,7 @@ int main(int argc, char** argv) {
     float maximumFrontLateralForceN = 0.0F;
     float maximumPneumaticTrailM = 0.0F;
     float minimumPneumaticTrailM = 1.0F;
+    float maximumRearPneumaticTrailM = 0.0F;
     float maximumRelaxationLengthM = 0.0F;
     float minimumRelaxationLengthM = 10.0F;
     for (int step = 0; step < stepsForSeconds(0.55F); ++step) {
@@ -357,6 +358,8 @@ int main(int argc, char** argv) {
             std::max(maximumPneumaticTrailM, rigidBodyVehicle.current().frontPneumaticTrailM);
         minimumPneumaticTrailM =
             std::min(minimumPneumaticTrailM, rigidBodyVehicle.current().frontPneumaticTrailM);
+        maximumRearPneumaticTrailM =
+            std::max(maximumRearPneumaticTrailM, rigidBodyVehicle.current().rearPneumaticTrailM);
         maximumRelaxationLengthM = std::max(
             maximumRelaxationLengthM,
             std::max({
@@ -384,6 +387,12 @@ int main(int argc, char** argv) {
         std::cerr << "Pneumatic trail telemetry did not build and collapse with front slip"
                   << " minTrail=" << minimumPneumaticTrailM
                   << " maxTrail=" << maximumPneumaticTrailM << '\n';
+        return 1;
+    }
+    if (maximumRearPneumaticTrailM <= 0.0F ||
+        maximumRearPneumaticTrailM > vehicleConfig.tirePneumaticTrailMaxM * 0.70F + 0.001F) {
+        std::cerr << "Rear pneumatic trail telemetry did not use reduced rear aligning trail"
+                  << " maxRearTrail=" << maximumRearPneumaticTrailM << '\n';
         return 1;
     }
     if (minimumRelaxationLengthM < vehicleConfig.tireRelaxationLengthMinM - 0.001F ||

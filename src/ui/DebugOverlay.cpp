@@ -110,9 +110,11 @@ void DebugOverlay::build(
         input.wheelActive ? "WHEEL" : "KEYBOARD", input.steer, degrees(vehicle.steeringAngleRadians),
         input.throttle, input.brake);
     y += kLineHeight;
-    add(12.0F, y, kDim, "SLIP FRONT %+6.2F DEG  REAR %+6.2F DEG  LAT G %+5.2F  LONG G %+5.2F  %s",
-        degrees(vehicle.frontSlipAngleRadians), degrees(vehicle.rearSlipAngleRadians), vehicle.lateralG,
-        vehicle.longitudinalG, ffbStatus != nullptr ? ffbStatus : "FFB: unknown");
+    add(12.0F, y, kDim,
+        "SLIP FRONT %+6.2F DEG  REAR %+6.2F DEG  TRAIL F/R %.3F/%.3F M  LAT G %+5.2F  LONG G %+5.2F  %s",
+        degrees(vehicle.frontSlipAngleRadians), degrees(vehicle.rearSlipAngleRadians),
+        vehicle.frontPneumaticTrailM, vehicle.rearPneumaticTrailM, vehicle.lateralG, vehicle.longitudinalG,
+        ffbStatus != nullptr ? ffbStatus : "FFB: unknown");
     y += kLineHeight;
     add(12.0F, y, kDim,
         "4W USE FL/FR/RL/RR %4.2F %4.2F %4.2F %4.2F  LONG %+4.2F %+4.2F %+4.2F %+4.2F",

@@ -56,7 +56,7 @@ camber thrust cancels instead of creating artificial drift. The road-course
 setup uses more aggressive static camber than the speedway setup, but camber is
 still a setup constant rather than a suspension-kinematic value.
 
-Front tires also compute pneumatic trail in the tire solver:
+Front and rear tires compute pneumatic trail in the tire solver:
 
 ```text
 slip_normalized = abs(relaxed_slip_angle) / tires.lateral_peak_slip_angle_deg
@@ -65,13 +65,16 @@ pneumatic_trail = clamp(
     -tires.pneumatic_trail_max_m * 0.3,
     tires.pneumatic_trail_max_m)
 aligning_trail = pneumatic_trail + tires.mechanical_trail_m
-aligning_moment = -aligning_trail * front_tire_lateral_force
+aligning_moment = -aligning_trail * tire_lateral_force
 ```
 
-That aligning moment is summed into chassis yaw along with the normal `r x F`
-tire force moments. The same solver-derived trail is exposed on `VehicleState`
-for force feedback, so FFB does not need to own a separate tire-trail model
-after physics has stepped.
+Rear tire trail uses the same configured maximum pneumatic and mechanical
+trail values with reduced rear scaling, giving moderate rear slip a restoring
+yaw contribution instead of letting oversteer rotate without self-aligning
+resistance. Each wheel's aligning moment is summed into chassis yaw along with
+the normal `r x F` tire force moments. The same solver-derived front trail is
+exposed on `VehicleState` for force feedback, so FFB does not need to own a
+separate front tire-trail model after physics has stepped.
 
 Relaxed lateral and longitudinal slip use a live relaxation length instead of
 one fixed value:
@@ -289,9 +292,10 @@ with 360 Hz as the default. Render timing does not alter the physics timestep.
 - The tire model has load/speed-dependent lateral and longitudinal relaxation
   length, dynamic relaxed slip ratio, combined-slip limiting, static setup
   camber thrust, and a lightweight slip/usage-driven tire
-  temperature and thermal grip state. Pneumatic trail is modeled for the front
-  tires only. There is still no pressure, wear, carcass modes, dynamic camber
-  gain, or contact-patch deformation model.
+  temperature and thermal grip state. Pneumatic trail is modeled as a compact
+  self-aligning moment for the front and rear tires. There is still no
+  pressure, wear, carcass modes, dynamic camber gain, or contact-patch
+  deformation model.
 - Brake discs are currently clean metallic render parts, not thermal brake
   simulations.
 - Tire smoke/dust and undertray sparks are renderer-side presentation effects,

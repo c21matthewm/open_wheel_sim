@@ -361,14 +361,21 @@ WheelForce resolveWheelForce(
     float pneumaticTrailM = 0.0F;
     float aligningTrailM = 0.0F;
     float aligningMomentNm = 0.0F;
+    const float normalizedLateralSlip =
+        std::abs(relaxedSlipAngleRadians) / std::max(0.001F, lateralPeakSlipAngleRadians);
     if (frontWheel) {
-        const float normalizedLateralSlip =
-            std::abs(relaxedSlipAngleRadians) / std::max(0.001F, lateralPeakSlipAngleRadians);
         pneumaticTrailM = std::clamp(
             pneumaticTrailMaxM * (1.0F - normalizedLateralSlip * normalizedLateralSlip),
             -pneumaticTrailMaxM * 0.30F,
             pneumaticTrailMaxM);
         aligningTrailM = pneumaticTrailM + mechanicalTrailM;
+        aligningMomentNm = -aligningTrailM * localForce.lateralN;
+    } else {
+        pneumaticTrailM = std::clamp(
+            pneumaticTrailMaxM * 0.70F * (1.0F - normalizedLateralSlip * normalizedLateralSlip),
+            -pneumaticTrailMaxM * 0.20F,
+            pneumaticTrailMaxM * 0.70F);
+        aligningTrailM = pneumaticTrailM + mechanicalTrailM * 0.50F;
         aligningMomentNm = -aligningTrailM * localForce.lateralN;
     }
 
@@ -981,8 +988,8 @@ void Vehicle::step(
         effectiveCamberForWheel(kRearLeft),
         config_.tireCamberStiffnessNPerRad,
         false,
-        0.0F,
-        0.0F,
+        config_.tirePneumaticTrailMaxM,
+        config_.tireMechanicalTrailM,
         rearWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearLeft],
@@ -1003,8 +1010,8 @@ void Vehicle::step(
         effectiveCamberForWheel(kRearRight),
         config_.tireCamberStiffnessNPerRad,
         false,
-        0.0F,
-        0.0F,
+        config_.tirePneumaticTrailMaxM,
+        config_.tireMechanicalTrailM,
         rearWheelStiffness,
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearRight],
@@ -1207,10 +1214,16 @@ void Vehicle::step(
     current_.rearRightThermalGrip = thermalGrip[kRearRight];
     current_.frontLeftPneumaticTrailM = frontLeft.pneumaticTrailM;
     current_.frontRightPneumaticTrailM = frontRight.pneumaticTrailM;
+    current_.rearLeftPneumaticTrailM = rearLeft.pneumaticTrailM;
+    current_.rearRightPneumaticTrailM = rearRight.pneumaticTrailM;
     current_.frontPneumaticTrailM =
         (frontLeft.pneumaticTrailM + frontRight.pneumaticTrailM) * 0.5F;
+    current_.rearPneumaticTrailM =
+        (rearLeft.pneumaticTrailM + rearRight.pneumaticTrailM) * 0.5F;
     current_.frontLeftAligningTrailM = frontLeft.aligningTrailM;
     current_.frontRightAligningTrailM = frontRight.aligningTrailM;
+    current_.rearLeftAligningTrailM = rearLeft.aligningTrailM;
+    current_.rearRightAligningTrailM = rearRight.aligningTrailM;
     current_.frontLeftRelaxationLengthM = tireRelaxationLength[kFrontLeft];
     current_.frontRightRelaxationLengthM = tireRelaxationLength[kFrontRight];
     current_.rearLeftRelaxationLengthM = tireRelaxationLength[kRearLeft];
