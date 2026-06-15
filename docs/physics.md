@@ -135,9 +135,18 @@ config-driven drivetrain:
 - idle, redline, shift-up, and shift-down RPM
 - optional automatic shifting
 
-The torque curve is intentionally lightweight: a smooth midrange bump with a
-redline cut. It is not an engine dyno simulation, but it gives gearing and RPM
-real meaning.
+The torque curve is intentionally lightweight and config-driven. Up to eight
+fixed-size `powertrain.torque_curve_knots` define normalized RPM and normalized
+torque. The default curve is weak below the powerband, flat/strong from the
+upper midrange through peak power, and drops to zero at redline:
+
+```text
+torque_multiplier = piecewise_linear(powertrain.torque_curve_knots, rpm / redline_rpm)
+engine_torque = powertrain.engine_torque_nm * torque_multiplier
+```
+
+It is not an engine dyno simulation, but it gives gearing and RPM real meaning
+without heap allocation or per-step table parsing.
 
 The default speedway gearing is stacked for Indianapolis: 6th gear redlines at
 about 239 mph with the configured 0.343 m tire radius, while 4th-6th are close

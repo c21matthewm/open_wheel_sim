@@ -1411,16 +1411,24 @@ float Vehicle::engineTorqueAt(float rpm, float throttle) const {
     if (throttle <= 0.0F) {
         return 0.0F;
     }
-    const float normalizedRpm = std::clamp(
-        (rpm - config_.idleRpm) / (config_.redlineRpm - config_.idleRpm),
-        0.0F,
-        1.0F);
-    const float midRangeBulge = std::sin(normalizedRpm * std::numbers::pi_v<float>);
-    const float redlineCut = std::clamp(
-        (config_.redlineRpm - rpm) / std::max(1.0F, config_.redlineRpm * 0.04F),
-        0.0F,
-        1.0F);
-    return config_.engineTorqueNm * (0.82F + 0.24F * midRangeBulge) * redlineCut;
+    const std::size_t knotCount =
+        std::clamp<std::size_t>(config_.torqueCurveKnotCount, 2U, config_.torqueCurveKnots.size());
+    const float normalizedRpm = std::clamp(rpm / std::max(1.0F, config_.redlineRpm), 0.0F, 1.0F);
+    if (normalizedRpm <= config_.torqueCurveKnots[0].rpmNorm) {
+        return config_.engineTorqueNm * config_.torqueCurveKnots[0].torqueNorm;
+    }
+    for (std::size_t index = 1; index < knotCount; ++index) {
+        const TorqueCurveKnot& previousKnot = config_.torqueCurveKnots[index - 1];
+        const TorqueCurveKnot& nextKnot = config_.torqueCurveKnots[index];
+        if (normalizedRpm <= nextKnot.rpmNorm) {
+            const float span = std::max(0.001F, nextKnot.rpmNorm - previousKnot.rpmNorm);
+            const float blend = std::clamp((normalizedRpm - previousKnot.rpmNorm) / span, 0.0F, 1.0F);
+            const float torqueNorm =
+                previousKnot.torqueNorm + (nextKnot.torqueNorm - previousKnot.torqueNorm) * blend;
+            return config_.engineTorqueNm * torqueNorm;
+        }
+    }
+    return config_.engineTorqueNm * config_.torqueCurveKnots[knotCount - 1].torqueNorm;
 }
 
 void Vehicle::updateGear(float engineRpm, const InputActions& input) {

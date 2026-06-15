@@ -139,7 +139,8 @@ The current app can:
   true force-at-corner rigid-body yaw integration from each tire's `r x F`
   moment plus front aligning moment, physical
   per-wheel angular velocity/inertia, wheelspin/lockup slip ratio, combined
-  grip/friction-circle limiting, brake bias, IMS-stacked geometric drivetrain
+  grip/friction-circle limiting, brake bias, config-driven fixed-size
+  piecewise-linear engine torque curve, IMS-stacked geometric drivetrain
   gearing that drops 12,000 RPM shifts to roughly 9,500 RPM, automatic shift
   cooldown, smooth manual-mode RPM limiter bounce, RPM, automatic upshift
   suppression when 1st/2nd-gear launch wheelspin spikes rear-wheel RPM, strict

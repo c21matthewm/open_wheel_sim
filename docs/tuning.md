@@ -56,6 +56,10 @@ to available rear grip can make the car less forgiving.
 ## Acceleration And Braking
 
 - `powertrain.engine_torque_nm`: base engine torque before the simple RPM curve.
+- `powertrain.torque_curve_knots`: up to eight `[rpm_norm, torque_norm]`
+  pairs for the piecewise-linear engine torque multiplier. RPM is normalized
+  by redline. The default is soft below the powerband, strongest in the
+  upper-mid/top range, and cuts to zero at redline.
 - `powertrain.engine_braking_n`: off-throttle rear-axle drag from the engine.
 - `powertrain.drivetrain_efficiency`: torque loss through the drivetrain.
 - `powertrain.drive_front_fraction`: drive sent to the front tires. The default

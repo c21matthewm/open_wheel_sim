@@ -81,6 +81,13 @@
     "redline_rpm": 12000.0,
     "shift_up_rpm": 11500.0,
     "shift_down_rpm": 5500.0,
+    "torque_curve_knots": [
+      [0.00, 0.30],
+      [0.45, 0.80],
+      [0.75, 1.00],
+      [0.90, 0.97],
+      [1.00, 0.00]
+    ],
     "automatic_transmission": true
   },
   "brakes": {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 
 namespace sim {
 
@@ -13,6 +14,11 @@ struct AeroPresetConfig {
     float brakeCopShift = 0.020F;
     float stallRideHeightM = 0.040F;
     float stallDownforceMultiplier = 0.60F;
+};
+
+struct TorqueCurveKnot {
+    float rpmNorm = 0.0F;
+    float torqueNorm = 0.0F;
 };
 
 struct VehicleConfig {
@@ -87,6 +93,14 @@ struct VehicleConfig {
     float redlineRpm = 12000.0F;
     float shiftUpRpm = 11500.0F;
     float shiftDownRpm = 5500.0F;
+    std::array<TorqueCurveKnot, 8> torqueCurveKnots{{
+        {0.00F, 0.30F},
+        {0.45F, 0.80F},
+        {0.75F, 1.00F},
+        {0.90F, 0.97F},
+        {1.00F, 0.00F},
+    }};
+    std::size_t torqueCurveKnotCount = 5;
     bool automaticShift = true;
     float brakeForceN = 22000.0F;
     float brakeBias = 0.58F;

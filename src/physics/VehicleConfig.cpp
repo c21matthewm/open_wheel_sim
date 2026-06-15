@@ -1,12 +1,91 @@
 #include "physics/VehicleConfig.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <numbers>
 #include <string>
 
 #include "config/ConfigFile.h"
 
 namespace sim {
+namespace {
+
+bool parseNextFloat(const std::string& text, std::size_t& cursor, float& value) {
+    while (cursor < text.size()) {
+        const unsigned char character = static_cast<unsigned char>(text[cursor]);
+        if (std::isdigit(character) || text[cursor] == '-' || text[cursor] == '+' || text[cursor] == '.') {
+            break;
+        }
+        ++cursor;
+    }
+    if (cursor >= text.size()) {
+        return false;
+    }
+
+    char* parseEnd = nullptr;
+    const char* parseStart = text.c_str() + cursor;
+    value = std::strtof(parseStart, &parseEnd);
+    if (parseEnd == parseStart) {
+        return false;
+    }
+    cursor = static_cast<std::size_t>(parseEnd - text.c_str());
+    return true;
+}
+
+void loadTorqueCurveKnots(
+    const std::string& rawKnots,
+    std::array<TorqueCurveKnot, 8>& knots,
+    std::size_t& knotCount) {
+    if (rawKnots.empty()) {
+        return;
+    }
+
+    std::array<TorqueCurveKnot, 8> parsed{};
+    std::size_t parsedCount = 0;
+    std::size_t cursor = 0;
+    while (parsedCount < parsed.size()) {
+        float rpmNorm = 0.0F;
+        float torqueNorm = 0.0F;
+        if (!parseNextFloat(rawKnots, cursor, rpmNorm) ||
+            !parseNextFloat(rawKnots, cursor, torqueNorm)) {
+            break;
+        }
+        parsed[parsedCount++] = {
+            std::clamp(rpmNorm, 0.0F, 1.0F),
+            std::clamp(torqueNorm, 0.0F, 1.25F),
+        };
+    }
+    if (parsedCount < 2) {
+        return;
+    }
+
+    std::sort(
+        parsed.begin(),
+        parsed.begin() + static_cast<std::ptrdiff_t>(parsedCount),
+        [](const TorqueCurveKnot& lhs, const TorqueCurveKnot& rhs) {
+            return lhs.rpmNorm < rhs.rpmNorm;
+        });
+
+    std::array<TorqueCurveKnot, 8> unique{};
+    std::size_t uniqueCount = 0;
+    for (std::size_t index = 0; index < parsedCount; ++index) {
+        if (uniqueCount == 0 ||
+            parsed[index].rpmNorm > unique[uniqueCount - 1].rpmNorm + 0.001F) {
+            unique[uniqueCount++] = parsed[index];
+        } else {
+            unique[uniqueCount - 1] = parsed[index];
+        }
+    }
+    if (uniqueCount < 2) {
+        return;
+    }
+
+    knots = unique;
+    knotCount = uniqueCount;
+}
+
+}  // namespace
 
 void VehicleConfig::load(const ConfigFile& config) {
     massKg = std::max(100.0F, config.getFloat("body.mass_kg", massKg));
@@ -227,6 +306,10 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("powertrain.shift_down_rpm", shiftDownRpm),
         idleRpm,
         shiftUpRpm - 250.0F);
+    loadTorqueCurveKnots(
+        config.getString("powertrain.torque_curve_knots", ""),
+        torqueCurveKnots,
+        torqueCurveKnotCount);
     const bool legacyAutomaticShift =
         config.getBool("powertrain.automatic_shift", automaticShift);
     automaticShift =

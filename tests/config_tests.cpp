@@ -111,6 +111,13 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.finalDriveRatio, 3.65F) ||
         !near(vehicleConfig.gearRatios[0], 3.55345F) ||
         !near(vehicleConfig.gearRatios[5], 1.105F) ||
+        vehicleConfig.torqueCurveKnotCount != 5 ||
+        !near(vehicleConfig.torqueCurveKnots[0].rpmNorm, 0.0F) ||
+        !near(vehicleConfig.torqueCurveKnots[0].torqueNorm, 0.30F) ||
+        !near(vehicleConfig.torqueCurveKnots[2].rpmNorm, 0.75F) ||
+        !near(vehicleConfig.torqueCurveKnots[2].torqueNorm, 1.00F) ||
+        !near(vehicleConfig.torqueCurveKnots[4].rpmNorm, 1.0F) ||
+        !near(vehicleConfig.torqueCurveKnots[4].torqueNorm, 0.0F) ||
         !near(vehicleConfig.lateralPeakSlipAngleRadians, 6.8F * std::numbers::pi_v<float> / 180.0F) ||
         !near(vehicleConfig.longitudinalPeakSlipRatio, 0.105F) ||
         !near(vehicleConfig.tireLoadSensitivityCoeff, 0.10F) ||
