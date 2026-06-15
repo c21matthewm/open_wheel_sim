@@ -112,9 +112,10 @@ The current app can:
   post pass before HUD/text rendering
 - use a fixed-distance chase camera with constant 50-degree FOV, locked
   distance/height updated directly from the car each frame to avoid high-speed
-  follow lag or apparent zoom-out, bank/acceleration roll hints, and heavily
-  muted asphalt vibration that increases primarily for grass driving, high
-  slip, and wall-contact trauma
+  follow lag or apparent zoom-out, a world-stable chase height that does not
+  inherit sprung-mass heave, configurable bank/acceleration roll hints, no
+  clean-asphalt shake by default, startup shake suppression, and configurable
+  apron/grass/slip/wall-contact shake
 - toggle a cockpit camera with `C` or the configured wheel camera button; the
   cockpit camera is moved backward inside the monocoque and slightly upward
   for a seated over-wheel/over-nose sightline, uses a 55-degree FOV, and

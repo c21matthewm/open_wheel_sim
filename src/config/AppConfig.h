@@ -24,6 +24,21 @@ struct GraphicsConfig {
     float bloomQuarterWeight = 0.98F;
     float hudGlassBlurRadiusPx = 8.0F;
     float hudGlassRefractionRadiusPx = 7.0F;
+    float cameraStartupShakeSuppressionS = 1.25F;
+    float cameraStartupShakeFadeS = 0.75F;
+    float cameraAsphaltShake = 0.0F;
+    float cameraApronShake = 0.003F;
+    float cameraGrassShake = 0.018F;
+    float cameraRpmShake = 0.0F;
+    float cameraSpeedShake = 0.0F;
+    float cameraSlipStartUsage = 0.90F;
+    float cameraSlipShakeUsageRange = 0.50F;
+    float cameraSlipShake = 0.018F;
+    float cameraTraumaShake = 0.12F;
+    float cameraTraumaDecay = 3.0F;
+    float cameraBankRollScale = 0.30F;
+    float cameraLateralGRollScale = 0.0F;
+    float cameraLongitudinalGRollScale = 0.0F;
     int physicsHz = 360;
     float maxFrameDelta = 0.1F;
 

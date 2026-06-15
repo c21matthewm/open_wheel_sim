@@ -1891,6 +1891,21 @@ struct MetalRenderer::Impl {
     float bloomQuarterWeight = 0.98F;
     float hudGlassBlurRadiusPx = 8.0F;
     float hudGlassRefractionRadiusPx = 7.0F;
+    float cameraStartupShakeSuppressionS = 1.25F;
+    float cameraStartupShakeFadeS = 0.75F;
+    float cameraAsphaltShake = 0.0F;
+    float cameraApronShake = 0.003F;
+    float cameraGrassShake = 0.018F;
+    float cameraRpmShake = 0.0F;
+    float cameraSpeedShake = 0.0F;
+    float cameraSlipStartUsage = 0.90F;
+    float cameraSlipShakeUsageRange = 0.50F;
+    float cameraSlipShake = 0.018F;
+    float cameraTraumaShake = 0.12F;
+    float cameraTraumaDecay = 3.0F;
+    float cameraBankRollScale = 0.30F;
+    float cameraLateralGRollScale = 0.0F;
+    float cameraLongitudinalGRollScale = 0.0F;
     std::uint64_t shadowFrameCounter = 0;
     float elapsedSeconds = 0.0F;
     float cameraTrauma = 0.0F;
@@ -3015,6 +3030,21 @@ bool MetalRenderer::initialize(
     float bloomQuarterWeight,
     float hudGlassBlurRadiusPx,
     float hudGlassRefractionRadiusPx,
+    float cameraStartupShakeSuppressionS,
+    float cameraStartupShakeFadeS,
+    float cameraAsphaltShake,
+    float cameraApronShake,
+    float cameraGrassShake,
+    float cameraRpmShake,
+    float cameraSpeedShake,
+    float cameraSlipStartUsage,
+    float cameraSlipShakeUsageRange,
+    float cameraSlipShake,
+    float cameraTraumaShake,
+    float cameraTraumaDecay,
+    float cameraBankRollScale,
+    float cameraLateralGRollScale,
+    float cameraLongitudinalGRollScale,
     const Track& track) {
     impl_->metalView = SDL_Metal_CreateView(window.nativeHandle());
     if (impl_->metalView == nullptr) {
@@ -3043,6 +3073,21 @@ bool MetalRenderer::initialize(
     impl_->bloomQuarterWeight = std::clamp(bloomQuarterWeight, 0.0F, 2.0F);
     impl_->hudGlassBlurRadiusPx = std::clamp(hudGlassBlurRadiusPx, 0.0F, 24.0F);
     impl_->hudGlassRefractionRadiusPx = std::clamp(hudGlassRefractionRadiusPx, 0.0F, 24.0F);
+    impl_->cameraStartupShakeSuppressionS = std::clamp(cameraStartupShakeSuppressionS, 0.0F, 5.0F);
+    impl_->cameraStartupShakeFadeS = std::clamp(cameraStartupShakeFadeS, 0.0F, 3.0F);
+    impl_->cameraAsphaltShake = std::clamp(cameraAsphaltShake, 0.0F, 0.05F);
+    impl_->cameraApronShake = std::clamp(cameraApronShake, 0.0F, 0.08F);
+    impl_->cameraGrassShake = std::clamp(cameraGrassShake, 0.0F, 0.12F);
+    impl_->cameraRpmShake = std::clamp(cameraRpmShake, 0.0F, 0.05F);
+    impl_->cameraSpeedShake = std::clamp(cameraSpeedShake, 0.0F, 0.08F);
+    impl_->cameraSlipStartUsage = std::clamp(cameraSlipStartUsage, 0.0F, 1.0F);
+    impl_->cameraSlipShakeUsageRange = std::clamp(cameraSlipShakeUsageRange, 0.05F, 1.0F);
+    impl_->cameraSlipShake = std::clamp(cameraSlipShake, 0.0F, 0.15F);
+    impl_->cameraTraumaShake = std::clamp(cameraTraumaShake, 0.0F, 0.35F);
+    impl_->cameraTraumaDecay = std::clamp(cameraTraumaDecay, 0.2F, 8.0F);
+    impl_->cameraBankRollScale = std::clamp(cameraBankRollScale, 0.0F, 0.75F);
+    impl_->cameraLateralGRollScale = std::clamp(cameraLateralGRollScale, 0.0F, 0.08F);
+    impl_->cameraLongitudinalGRollScale = std::clamp(cameraLongitudinalGRollScale, 0.0F, 0.08F);
     impl_->shadowFrameCounter = 0;
     impl_->hasValidShadowMap = false;
     impl_->cachedShadowViewProjection = Mat4::identity();
@@ -3163,10 +3208,11 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
         impl_->elapsedSeconds += frameDeltaSeconds;
 
         const float brakeSignal = std::clamp(scene.brakeInput, 0.0F, 1.0F);
-        if (scene.wallContact) {
+        if (scene.wallContact && impl_->elapsedSeconds > impl_->cameraStartupShakeSuppressionS) {
             impl_->cameraTrauma = std::max(impl_->cameraTrauma, 1.0F);
         }
-        impl_->cameraTrauma = std::max(0.0F, impl_->cameraTrauma - frameDeltaSeconds * 1.65F);
+        impl_->cameraTrauma =
+            std::max(0.0F, impl_->cameraTrauma - frameDeltaSeconds * impl_->cameraTraumaDecay);
 
         const float forwardX = std::sin(scene.vehicle.yawRadians);
         const float forwardZ = std::cos(scene.vehicle.yawRadians);
@@ -3209,7 +3255,7 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
                 ? worldFromChassisLocal({0.0F, 1.08F, -0.46F})
                 : Vec3{
                       scene.vehicle.positionX - carForward.x * 10.2F,
-                      scene.vehicleHeightM + scene.vehicle.chassisHeaveM + 3.15F,
+                      scene.vehicleHeightM + 3.15F,
                       scene.vehicle.positionZ - carForward.z * 10.2F,
                   };
         const Vec3 desiredTarget =
@@ -3217,7 +3263,7 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
                 ? worldFromChassisLocal({0.0F, 0.90F, 60.0F})
                 : Vec3{
                       scene.vehicle.positionX + carForward.x * 5.4F,
-                      scene.vehicleHeightM + scene.vehicle.chassisHeaveM + 0.72F,
+                      scene.vehicleHeightM + 0.72F,
                       scene.vehicle.positionZ + carForward.z * 5.4F,
                   };
         if (!impl_->cameraInitialized ||
@@ -3234,17 +3280,33 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
 
         const bool onAsphalt = scene.surface == TrackSurface::Asphalt;
         const bool onGrass = scene.surface == TrackSurface::Grass;
-        const float cleanSurfaceBuzz = onAsphalt ? 0.0012F : (onGrass ? 0.030F : 0.010F);
+        const auto smoothStep01 = [](float edge0, float edge1, float value) {
+            const float span = std::max(0.0001F, edge1 - edge0);
+            const float x = std::clamp((value - edge0) / span, 0.0F, 1.0F);
+            return x * x * (3.0F - 2.0F * x);
+        };
+        const float startupShakeGate = smoothStep01(
+            impl_->cameraStartupShakeSuppressionS,
+            impl_->cameraStartupShakeSuppressionS + impl_->cameraStartupShakeFadeS,
+            impl_->elapsedSeconds);
+        const float surfaceBuzz =
+            onAsphalt ? impl_->cameraAsphaltShake : (onGrass ? impl_->cameraGrassShake : impl_->cameraApronShake);
         const float rpmBuzz =
             std::clamp((scene.vehicle.rpm - 1200.0F) / 9600.0F, 0.0F, 1.0F) *
-            (onAsphalt ? 0.0008F : 0.012F);
-        const float speedBuzz = speedFactor * (onAsphalt ? 0.0005F : (onGrass ? 0.040F : 0.010F));
+            impl_->cameraRpmShake;
+        const float speedBuzz = speedFactor * impl_->cameraSpeedShake;
         const float slipBuzz =
-            std::clamp(tireUse - 0.86F, 0.0F, 0.55F) * (onAsphalt ? 0.035F : 0.18F);
+            std::clamp(
+                tireUse - impl_->cameraSlipStartUsage,
+                0.0F,
+                impl_->cameraSlipShakeUsageRange) *
+            impl_->cameraSlipShake;
         const float shakeAmount =
             cockpitCamera
                 ? 0.0F
-                : cleanSurfaceBuzz + rpmBuzz + speedBuzz + slipBuzz + impl_->cameraTrauma * 0.26F;
+                : startupShakeGate *
+                      (surfaceBuzz + rpmBuzz + speedBuzz + slipBuzz +
+                       impl_->cameraTrauma * impl_->cameraTraumaShake);
         const float t = impl_->elapsedSeconds;
         const Vec3 shake{
             carRight.x * std::sin(t * 43.0F + scene.vehicle.rpm * 0.0023F) * shakeAmount +
@@ -3266,9 +3328,10 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
         const float cameraRoll =
             cockpitCamera
                 ? 0.0F
-                : scene.vehicleBankRadians * 0.34F +
-                      std::clamp(scene.vehicle.lateralG, -2.4F, 2.4F) * 0.045F -
-                      std::clamp(scene.vehicle.longitudinalG, -1.8F, 1.8F) * 0.022F;
+                : scene.vehicleBankRadians * impl_->cameraBankRollScale +
+                      std::clamp(scene.vehicle.lateralG, -2.4F, 2.4F) * impl_->cameraLateralGRollScale -
+                      std::clamp(scene.vehicle.longitudinalG, -1.8F, 1.8F) *
+                          impl_->cameraLongitudinalGRollScale;
         const Vec3 rolledUp =
             cockpitCamera
                 ? normalize(chassisUp)

@@ -62,7 +62,22 @@ int main(int argc, char** argv) {
         !near(graphicsConfig.bloomHalfWeight, 0.86F) ||
         !near(graphicsConfig.bloomQuarterWeight, 0.98F) ||
         !near(graphicsConfig.hudGlassBlurRadiusPx, 8.0F) ||
-        !near(graphicsConfig.hudGlassRefractionRadiusPx, 7.0F)) {
+        !near(graphicsConfig.hudGlassRefractionRadiusPx, 7.0F) ||
+        !near(graphicsConfig.cameraStartupShakeSuppressionS, 1.25F) ||
+        !near(graphicsConfig.cameraStartupShakeFadeS, 0.75F) ||
+        !near(graphicsConfig.cameraAsphaltShake, 0.0F) ||
+        !near(graphicsConfig.cameraApronShake, 0.003F) ||
+        !near(graphicsConfig.cameraGrassShake, 0.018F) ||
+        !near(graphicsConfig.cameraRpmShake, 0.0F) ||
+        !near(graphicsConfig.cameraSpeedShake, 0.0F) ||
+        !near(graphicsConfig.cameraSlipStartUsage, 0.90F) ||
+        !near(graphicsConfig.cameraSlipShakeUsageRange, 0.50F) ||
+        !near(graphicsConfig.cameraSlipShake, 0.018F) ||
+        !near(graphicsConfig.cameraTraumaShake, 0.12F) ||
+        !near(graphicsConfig.cameraTraumaDecay, 3.0F) ||
+        !near(graphicsConfig.cameraBankRollScale, 0.30F) ||
+        !near(graphicsConfig.cameraLateralGRollScale, 0.0F) ||
+        !near(graphicsConfig.cameraLongitudinalGRollScale, 0.0F)) {
         std::cerr << "Graphics/render performance config did not load expected defaults\n";
         return 1;
     }

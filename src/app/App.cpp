@@ -249,6 +249,21 @@ bool App::initialize() {
             graphicsConfig_.bloomQuarterWeight,
             graphicsConfig_.hudGlassBlurRadiusPx,
             graphicsConfig_.hudGlassRefractionRadiusPx,
+            graphicsConfig_.cameraStartupShakeSuppressionS,
+            graphicsConfig_.cameraStartupShakeFadeS,
+            graphicsConfig_.cameraAsphaltShake,
+            graphicsConfig_.cameraApronShake,
+            graphicsConfig_.cameraGrassShake,
+            graphicsConfig_.cameraRpmShake,
+            graphicsConfig_.cameraSpeedShake,
+            graphicsConfig_.cameraSlipStartUsage,
+            graphicsConfig_.cameraSlipShakeUsageRange,
+            graphicsConfig_.cameraSlipShake,
+            graphicsConfig_.cameraTraumaShake,
+            graphicsConfig_.cameraTraumaDecay,
+            graphicsConfig_.cameraBankRollScale,
+            graphicsConfig_.cameraLateralGRollScale,
+            graphicsConfig_.cameraLongitudinalGRollScale,
             raceSession_->track())) {
         std::fprintf(stderr, "Renderer initialization failed: %s\n", renderer_.error().c_str());
         return false;

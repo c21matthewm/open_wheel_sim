@@ -72,8 +72,9 @@ The camera is stateful inside the renderer: it supports fixed-distance chase
 and chassis-locked cockpit modes, uses a 50-degree chase FOV and 55-degree
 cockpit FOV, locks chase translation directly to the car to avoid high-speed
 follow lag, places the cockpit eye rearward/upward inside the monocoque for a
-seated over-wheel sightline, retains bank/acceleration roll hints in chase view,
-and applies muted asphalt vibration with stronger grass/slip/wall-contact shake. The UI
+seated over-wheel sightline, keeps chase view stable on clean asphalt by
+default, retains only configurable bank/acceleration roll hints, and applies
+configurable apron/grass/slip/wall-contact shake after startup settling. The UI
 pass draws rounded
 translucent panels, glow accents, a segmented curved RPM sweep, Escape-menu
 text, and telemetry

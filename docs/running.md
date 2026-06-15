@@ -122,8 +122,9 @@ grading.
 The chase camera uses a fixed distance, locked height, and constant 50-degree
 FOV; `C` toggles to a seated 55-degree chassis-locked cockpit camera with no
 cockpit shake.
-Chase view keeps asphalt vibration very subtle while increasing shake for
-grass, high slip, and wall contact. A glass-style bottom instrument cluster is always drawn
+Chase view is stable on clean asphalt by default, ignores startup contact
+shake while the scene settles, and uses configurable shake only for apron/grass
+driving, high slip, and wall contact. A glass-style bottom instrument cluster is always drawn
 with digital speed/gear/RPM text and a curved RPM sweep. The telemetry/lap HUD
 appears in the upper-left, synthesized combustion engine/tire/impact audio
 plays through SDL3 when an audio device is available, and the SDL input diagnostic panel is

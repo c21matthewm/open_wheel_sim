@@ -28,6 +28,21 @@ public:
         float bloomQuarterWeight,
         float hudGlassBlurRadiusPx,
         float hudGlassRefractionRadiusPx,
+        float cameraStartupShakeSuppressionS,
+        float cameraStartupShakeFadeS,
+        float cameraAsphaltShake,
+        float cameraApronShake,
+        float cameraGrassShake,
+        float cameraRpmShake,
+        float cameraSpeedShake,
+        float cameraSlipStartUsage,
+        float cameraSlipShakeUsageRange,
+        float cameraSlipShake,
+        float cameraTraumaShake,
+        float cameraTraumaDecay,
+        float cameraBankRollScale,
+        float cameraLateralGRollScale,
+        float cameraLongitudinalGRollScale,
         const Track& track) = 0;
     virtual void shutdown() = 0;
     virtual bool render(const RenderScene& scene, const DebugOverlay& overlay) = 0;

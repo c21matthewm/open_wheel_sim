@@ -37,6 +37,44 @@ void GraphicsConfig::load(const ConfigFile& config) {
         config.getFloat("render.hud_glass_refraction_radius_px", hudGlassRefractionRadiusPx),
         0.0F,
         24.0F);
+    cameraStartupShakeSuppressionS = std::clamp(
+        config.getFloat("render.camera_startup_shake_suppression_s", cameraStartupShakeSuppressionS),
+        0.0F,
+        5.0F);
+    cameraStartupShakeFadeS =
+        std::clamp(config.getFloat("render.camera_startup_shake_fade_s", cameraStartupShakeFadeS), 0.0F, 3.0F);
+    cameraAsphaltShake =
+        std::clamp(config.getFloat("render.camera_asphalt_shake", cameraAsphaltShake), 0.0F, 0.05F);
+    cameraApronShake =
+        std::clamp(config.getFloat("render.camera_apron_shake", cameraApronShake), 0.0F, 0.08F);
+    cameraGrassShake =
+        std::clamp(config.getFloat("render.camera_grass_shake", cameraGrassShake), 0.0F, 0.12F);
+    cameraRpmShake =
+        std::clamp(config.getFloat("render.camera_rpm_shake", cameraRpmShake), 0.0F, 0.05F);
+    cameraSpeedShake =
+        std::clamp(config.getFloat("render.camera_speed_shake", cameraSpeedShake), 0.0F, 0.08F);
+    cameraSlipStartUsage =
+        std::clamp(config.getFloat("render.camera_slip_start_usage", cameraSlipStartUsage), 0.0F, 1.0F);
+    cameraSlipShakeUsageRange = std::clamp(
+        config.getFloat("render.camera_slip_shake_usage_range", cameraSlipShakeUsageRange),
+        0.05F,
+        1.0F);
+    cameraSlipShake =
+        std::clamp(config.getFloat("render.camera_slip_shake", cameraSlipShake), 0.0F, 0.15F);
+    cameraTraumaShake =
+        std::clamp(config.getFloat("render.camera_trauma_shake", cameraTraumaShake), 0.0F, 0.35F);
+    cameraTraumaDecay =
+        std::clamp(config.getFloat("render.camera_trauma_decay", cameraTraumaDecay), 0.2F, 8.0F);
+    cameraBankRollScale =
+        std::clamp(config.getFloat("render.camera_bank_roll_scale", cameraBankRollScale), 0.0F, 0.75F);
+    cameraLateralGRollScale = std::clamp(
+        config.getFloat("render.camera_lateral_g_roll_scale", cameraLateralGRollScale),
+        0.0F,
+        0.08F);
+    cameraLongitudinalGRollScale = std::clamp(
+        config.getFloat("render.camera_longitudinal_g_roll_scale", cameraLongitudinalGRollScale),
+        0.0F,
+        0.08F);
     physicsHz = std::clamp(config.getInt("simulation.physics_hz", physicsHz), 30, 720);
     maxFrameDelta =
         std::clamp(config.getFloat("simulation.max_frame_delta", maxFrameDelta), 0.02F, 0.5F);

@@ -18,7 +18,22 @@
     "bloom_half_weight": 0.86,
     "bloom_quarter_weight": 0.98,
     "hud_glass_blur_radius_px": 8.0,
-    "hud_glass_refraction_radius_px": 7.0
+    "hud_glass_refraction_radius_px": 7.0,
+    "camera_startup_shake_suppression_s": 1.25,
+    "camera_startup_shake_fade_s": 0.75,
+    "camera_asphalt_shake": 0.0,
+    "camera_apron_shake": 0.003,
+    "camera_grass_shake": 0.018,
+    "camera_rpm_shake": 0.0,
+    "camera_speed_shake": 0.0,
+    "camera_slip_start_usage": 0.90,
+    "camera_slip_shake_usage_range": 0.50,
+    "camera_slip_shake": 0.018,
+    "camera_trauma_shake": 0.12,
+    "camera_trauma_decay": 3.0,
+    "camera_bank_roll_scale": 0.30,
+    "camera_lateral_g_roll_scale": 0.0,
+    "camera_longitudinal_g_roll_scale": 0.0
   },
   "simulation": {
     "physics_hz": 360,
