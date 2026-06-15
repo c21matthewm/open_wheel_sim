@@ -99,6 +99,8 @@ struct VehicleConfig {
     float aeroBrakeCopShift = 0.020F;
     float aeroStallCopShift = 0.060F;
     float aeroInstantLoadFraction = 0.16F;
+    float aeroYawDampingNmPerRadS = 1200.0F;
+    float aeroYawDampingReferenceSpeedMps = 60.0F;
     float minFrontDownforceFraction = 0.30F;
     float maxFrontDownforceFraction = 0.60F;
     AeroPresetConfig speedwayAeroPreset{};

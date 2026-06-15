@@ -150,6 +150,7 @@ The current app can:
   braking CoP migration, undertray stall/bottoming reduction, asymmetric
   bottoming CoP shift, a small instant current-platform aero-load component,
   and forward CoP migration when the nose rides lower than the rear, alongside
+  speed-squared aerodynamic yaw damping for high-speed stability, and
   switchable config-backed Speedway and Road Course aero presets that modify
   downforce, drag, base front aero balance, braking CoP shift, stall height, and
   stall reduction

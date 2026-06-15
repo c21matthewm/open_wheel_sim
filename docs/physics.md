@@ -178,6 +178,20 @@ component directly to tire normal loads so high-speed platform changes are felt
 without waiting entirely for suspension lag. Aerodynamic drag is also quadratic
 with speed and acts longitudinally against vehicle motion.
 
+Aerodynamic yaw damping adds a stabilizing yaw moment that rises with speed
+squared:
+
+```text
+yaw_damping = aero.yaw_damping_nm_per_rad_s
+              * speed^2 / aero.yaw_damping_reference_speed_mps^2
+              * yaw_rate
+yaw_moment -= yaw_damping
+```
+
+At parking-lot speeds this term is effectively absent. At speedway speeds it
+helps the car resist and settle small yaw perturbations without changing the
+360 Hz fixed-step model or adding state.
+
 The active aero package is selected by `Vehicle::setAeroPreset`. The configured
 `aero_presets.speedway` and `aero_presets.road_course` packages independently
 set downforce, drag, base front downforce fraction, brake CoP shift, stall

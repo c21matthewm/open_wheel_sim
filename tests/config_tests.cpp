@@ -140,6 +140,8 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.roadCourseAeroPreset.stallRideHeightM, 0.045F) ||
         !near(vehicleConfig.roadCourseAeroPreset.stallDownforceMultiplier, 0.55F) ||
         !near(vehicleConfig.aeroInstantLoadFraction, 0.16F) ||
+        !near(vehicleConfig.aeroYawDampingNmPerRadS, 1200.0F) ||
+        !near(vehicleConfig.aeroYawDampingReferenceSpeedMps, 60.0F) ||
         !near(vehicleConfig.frontRollStiffnessFraction, 0.52F) ||
         !near(vehicleConfig.highSpeedSteerScale, 0.22F) ||
         !near(vehicleConfig.steerSpeedThresholdMps, 75.0F) ||

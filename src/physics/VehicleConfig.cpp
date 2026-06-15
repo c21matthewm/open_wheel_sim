@@ -265,6 +265,14 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("aero.instant_load_fraction", aeroInstantLoadFraction),
         0.0F,
         0.50F);
+    aeroYawDampingNmPerRadS = std::clamp(
+        config.getFloat("aero.yaw_damping_nm_per_rad_s", aeroYawDampingNmPerRadS),
+        0.0F,
+        6000.0F);
+    aeroYawDampingReferenceSpeedMps = std::clamp(
+        config.getFloat("aero.yaw_damping_reference_speed_mps", aeroYawDampingReferenceSpeedMps),
+        5.0F,
+        120.0F);
     minFrontDownforceFraction = std::clamp(
         config.getFloat("aero.min_front_downforce_fraction", minFrontDownforceFraction),
         0.05F,

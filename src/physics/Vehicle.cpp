@@ -1102,6 +1102,9 @@ void Vehicle::step(
             wheelOffsetWorldX[wheel] * wheelForceWorldZ[wheel];
         yawMoment += wheelForces[wheel].aligningMomentNm;
     }
+    const float yawDampingSpeedScale =
+        speedSquared / square(std::max(1.0F, config_.aeroYawDampingReferenceSpeedMps));
+    yawMoment -= config_.aeroYawDampingNmPerRadS * yawDampingSpeedScale * current_.yawRate;
     current_.yawRate += yawMoment / std::max(1.0F, config_.yawInertiaKgM2) * safeDt;
     current_.yawRadians += current_.yawRate * safeDt;
     current_.positionX += current_.velocityX * safeDt;

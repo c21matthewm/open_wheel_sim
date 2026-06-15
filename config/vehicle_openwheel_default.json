@@ -98,6 +98,8 @@
     "brake_cop_shift": 0.020,
     "stall_cop_shift": 0.060,
     "instant_load_fraction": 0.16,
+    "yaw_damping_nm_per_rad_s": 1200.0,
+    "yaw_damping_reference_speed_mps": 60.0,
     "min_front_downforce_fraction": 0.30,
     "max_front_downforce_fraction": 0.60
   },
