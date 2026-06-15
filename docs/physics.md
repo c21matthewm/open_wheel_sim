@@ -73,7 +73,8 @@ tire force moments. The same solver-derived trail is exposed on `VehicleState`
 for force feedback, so FFB does not need to own a separate tire-trail model
 after physics has stepped.
 
-Relaxed lateral slip uses a live relaxation length instead of one fixed value:
+Relaxed lateral and longitudinal slip use a live relaxation length instead of
+one fixed value:
 
 ```text
 load_scale = normal_load / tires.load_reference_normal_n
@@ -86,9 +87,12 @@ tau = relaxation_length / max(0.01, abs(tire_longitudinal_speed))
 relaxed_slip += (instantaneous_slip - relaxed_slip) * (1 - exp(-dt / tau))
 ```
 
-This makes high-load tires build lateral force more gradually while preserving
-faster response where load and speed are lower. The live per-wheel relaxation
-lengths are exposed in telemetry.
+For longitudinal force, the response speed also considers wheel surface speed
+so launch wheelspin and brake lockup can build progressively even when road
+speed is very low. The relaxed slip ratio is stored per wheel and is the value
+fed into the longitudinal Pacejka-lite curve. This makes high-load tires build
+force more gradually while preserving faster response where load and speed are
+lower. The live per-wheel relaxation lengths are exposed in telemetry.
 
 The front wheel forces are rotated by steering angle before forces and yaw
 moments are integrated. Keyboard steering also has two stability assists:
@@ -256,8 +260,9 @@ with 360 Hz as the default. Render timing does not alter the physics timestep.
 
 - Suspension runs against a smooth local track plane; there are no per-wheel
   terrain height samples, potholes, curbs, or arbitrary 3D mesh contacts yet.
-- The tire model has load/speed-dependent relaxation length, dynamic slip ratio, combined-slip
-  limiting, static setup camber thrust, and a lightweight slip/usage-driven tire
+- The tire model has load/speed-dependent lateral and longitudinal relaxation
+  length, dynamic relaxed slip ratio, combined-slip limiting, static setup
+  camber thrust, and a lightweight slip/usage-driven tire
   temperature and thermal grip state. Pneumatic trail is modeled for the front
   tires only. There is still no pressure, wear, carcass modes, dynamic camber
   gain, or contact-patch deformation model.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "input/InputActions.h"
 #include "physics/VehicleConfig.h"
 
@@ -59,6 +61,7 @@ struct VehicleState {
     float frontRightLongitudinalSlip = 0.0F;
     float rearLeftLongitudinalSlip = 0.0F;
     float rearRightLongitudinalSlip = 0.0F;
+    std::array<float, 4> relaxedSlipRatio{};
     float frontNormalLoadN = 0.0F;
     float rearNormalLoadN = 0.0F;
     float frontLeftNormalLoadN = 0.0F;

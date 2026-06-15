@@ -248,6 +248,36 @@ float relaxedSlipAngle(
         0.70F);
 }
 
+float instantaneousLongitudinalSlipRatio(
+    float tireLongitudinalSpeed,
+    float wheelOmegaRadPerSec,
+    float wheelRadiusM) {
+    const float wheelSurfaceSpeed = wheelOmegaRadPerSec * wheelRadiusM;
+    const float slipDenominator =
+        std::max({std::abs(tireLongitudinalSpeed), std::abs(wheelSurfaceSpeed), 2.0F});
+    return std::clamp(
+        (wheelSurfaceSpeed - tireLongitudinalSpeed) / slipDenominator,
+        -3.0F,
+        3.0F);
+}
+
+float relaxedLongitudinalSlipRatio(
+    float previousSlipRatio,
+    float instantaneousSlipRatio,
+    float tireLongitudinalSpeed,
+    float wheelSurfaceSpeed,
+    float relaxationLengthM,
+    float deltaSeconds) {
+    const float rollingSpeed =
+        std::max({std::abs(tireLongitudinalSpeed), std::abs(wheelSurfaceSpeed), 0.75F});
+    const float tauSeconds = std::max(0.001F, std::max(0.03F, relaxationLengthM) / rollingSpeed);
+    const float response = 1.0F - std::exp(-deltaSeconds / tauSeconds);
+    return std::clamp(
+        previousSlipRatio + (instantaneousSlipRatio - previousSlipRatio) * response,
+        -3.0F,
+        3.0F);
+}
+
 float liveRelaxationLength(
     float normalLoadN,
     float referenceLoadN,
@@ -265,12 +295,9 @@ float liveRelaxationLength(
 }
 
 WheelForce resolveWheelForce(
-    float bodyLongitudinalSpeed,
-    float bodyLateralSpeed,
     float steerAngle,
     float relaxedSlipAngleRadians,
-    float wheelOmegaRadPerSec,
-    float wheelRadiusM,
+    float relaxedSlipRatio,
     float camberAngleRadians,
     float camberStiffnessNPerRad,
     bool frontWheel,
@@ -291,8 +318,6 @@ WheelForce resolveWheelForce(
     float loadSensitivityMinEfficiency) {
     const float cosSteer = std::cos(steerAngle);
     const float sinSteer = std::sin(steerAngle);
-    const float tireLongitudinalSpeed =
-        bodyLongitudinalSpeed * cosSteer + bodyLateralSpeed * sinSteer;
     const float lateralFrictionLimit =
         wheelFrictionLimit(
             lateralFriction,
@@ -318,14 +343,9 @@ WheelForce resolveWheelForce(
             tirePostPeakFalloff) +
         camberStiffnessNPerRad * camberAngleRadians *
             (normalLoadN / std::max(1.0F, referenceLoadN));
-    const float wheelSurfaceSpeed = wheelOmegaRadPerSec * wheelRadiusM;
-    const float slipDenominator =
-        std::max({std::abs(tireLongitudinalSpeed), std::abs(wheelSurfaceSpeed), 2.0F});
-    const float slipRatio =
-        std::clamp((wheelSurfaceSpeed - tireLongitudinalSpeed) / slipDenominator, -3.0F, 3.0F);
     const float longitudinalDemand =
         tireLongitudinalForce(
-            slipRatio,
+            relaxedSlipRatio,
             longitudinalStiffness,
             longitudinalFrictionLimit,
             longitudinalPeakSlipRatio,
@@ -360,7 +380,7 @@ WheelForce resolveWheelForce(
         relaxedSlipAngleRadians,
         normalLoadN,
         localForce.usage,
-        slipRatio,
+        relaxedSlipRatio,
         pneumaticTrailM,
         aligningTrailM,
         aligningMomentNm,
@@ -511,6 +531,12 @@ void Vehicle::step(
         current_.frontRightSlipAngleRadians,
         current_.rearLeftSlipAngleRadians,
         current_.rearRightSlipAngleRadians,
+    }};
+    std::array<float, kWheelCount> relaxedSlipRatio{{
+        current_.relaxedSlipRatio[kFrontLeft],
+        current_.relaxedSlipRatio[kFrontRight],
+        current_.relaxedSlipRatio[kRearLeft],
+        current_.relaxedSlipRatio[kRearRight],
     }};
 
     const float bankSin = std::sin(bankRadians);
@@ -858,6 +884,17 @@ void Vehicle::step(
             tireLateralSpeed[wheel],
             tireRelaxationLength[wheel],
             safeDt);
+        const float wheelSurfaceSpeed = wheelOmega[wheel] * config_.wheelRadiusM;
+        relaxedSlipRatio[wheel] = relaxedLongitudinalSlipRatio(
+            relaxedSlipRatio[wheel],
+            instantaneousLongitudinalSlipRatio(
+                tireLongitudinalSpeed[wheel],
+                wheelOmega[wheel],
+                config_.wheelRadiusM),
+            tireLongitudinalSpeed[wheel],
+            wheelSurfaceSpeed,
+            tireRelaxationLength[wheel],
+            safeDt);
 
         float opposeSign = signOrZero(wheelOmega[wheel], 0.08F);
         if (opposeSign == 0.0F) {
@@ -880,12 +917,9 @@ void Vehicle::step(
     };
 
     const WheelForce frontLeft = resolveWheelForce(
-        bodyLongitudinalSpeed[kFrontLeft],
-        bodyLateralSpeed[kFrontLeft],
         steerAngle,
         relaxedSlip[kFrontLeft],
-        wheelOmega[kFrontLeft],
-        config_.wheelRadiusM,
+        relaxedSlipRatio[kFrontLeft],
         effectiveCamberForWheel(kFrontLeft),
         config_.tireCamberStiffnessNPerRad,
         true,
@@ -905,12 +939,9 @@ void Vehicle::step(
         config_.tireLoadSensitivityCoeff,
         config_.tireLoadSensitivityMinEfficiency);
     const WheelForce frontRight = resolveWheelForce(
-        bodyLongitudinalSpeed[kFrontRight],
-        bodyLateralSpeed[kFrontRight],
         steerAngle,
         relaxedSlip[kFrontRight],
-        wheelOmega[kFrontRight],
-        config_.wheelRadiusM,
+        relaxedSlipRatio[kFrontRight],
         effectiveCamberForWheel(kFrontRight),
         config_.tireCamberStiffnessNPerRad,
         true,
@@ -930,12 +961,9 @@ void Vehicle::step(
         config_.tireLoadSensitivityCoeff,
         config_.tireLoadSensitivityMinEfficiency);
     const WheelForce rearLeft = resolveWheelForce(
-        bodyLongitudinalSpeed[kRearLeft],
-        bodyLateralSpeed[kRearLeft],
         0.0F,
         relaxedSlip[kRearLeft],
-        wheelOmega[kRearLeft],
-        config_.wheelRadiusM,
+        relaxedSlipRatio[kRearLeft],
         effectiveCamberForWheel(kRearLeft),
         config_.tireCamberStiffnessNPerRad,
         false,
@@ -955,12 +983,9 @@ void Vehicle::step(
         config_.tireLoadSensitivityCoeff,
         config_.tireLoadSensitivityMinEfficiency);
     const WheelForce rearRight = resolveWheelForce(
-        bodyLongitudinalSpeed[kRearRight],
-        bodyLateralSpeed[kRearRight],
         0.0F,
         relaxedSlip[kRearRight],
-        wheelOmega[kRearRight],
-        config_.wheelRadiusM,
+        relaxedSlipRatio[kRearRight],
         effectiveCamberForWheel(kRearRight),
         config_.tireCamberStiffnessNPerRad,
         false,
@@ -1126,6 +1151,10 @@ void Vehicle::step(
     current_.frontRightLongitudinalSlip = frontRight.longitudinalSlip;
     current_.rearLeftLongitudinalSlip = rearLeft.longitudinalSlip;
     current_.rearRightLongitudinalSlip = rearRight.longitudinalSlip;
+    current_.relaxedSlipRatio[kFrontLeft] = relaxedSlipRatio[kFrontLeft];
+    current_.relaxedSlipRatio[kFrontRight] = relaxedSlipRatio[kFrontRight];
+    current_.relaxedSlipRatio[kRearLeft] = relaxedSlipRatio[kRearLeft];
+    current_.relaxedSlipRatio[kRearRight] = relaxedSlipRatio[kRearRight];
     current_.frontNormalLoadN = frontLeft.normalLoadN + frontRight.normalLoadN;
     current_.rearNormalLoadN = rearLeft.normalLoadN + rearRight.normalLoadN;
     current_.frontLeftNormalLoadN = frontLeft.normalLoadN;

@@ -135,6 +135,7 @@ The current app can:
   front pneumatic/mechanical trail aligning moment in the tire solver,
   load/speed-dependent transient tire relaxation length,
   Pacejka-lite tire peak/falloff force curves,
+  longitudinal slip-ratio relaxation for progressive wheelspin/lockup buildup,
   true force-at-corner rigid-body yaw integration from each tire's `r x F`
   moment plus front aligning moment, physical
   per-wheel angular velocity/inertia, wheelspin/lockup slip ratio, combined
