@@ -68,6 +68,9 @@ struct VehicleState {
     float frontRightNormalLoadN = 0.0F;
     float rearLeftNormalLoadN = 0.0F;
     float rearRightNormalLoadN = 0.0F;
+    float frontRollStiffnessNmPerRad = 0.0F;
+    float rearRollStiffnessNmPerRad = 0.0F;
+    float frontRollStiffnessFraction = 0.0F;
     float frontLateralForceN = 0.0F;
     float rearLateralForceN = 0.0F;
     float frontLeftLateralForceN = 0.0F;

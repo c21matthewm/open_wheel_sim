@@ -48,6 +48,8 @@
     "rear_damper_n_per_mps": 9800.0,
     "front_anti_roll_bar_n_per_m": 38000.0,
     "rear_anti_roll_bar_n_per_m": 34000.0,
+    "front_arb_nm_per_rad": 18000.0,
+    "rear_arb_nm_per_rad": 12000.0,
     "max_compression_m": 0.085,
     "max_droop_m": 0.055,
     "bump_stop_rate_n_per_m": 450000.0,

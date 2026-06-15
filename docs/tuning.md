@@ -32,13 +32,18 @@ current run. These runtime changes are not written back to JSON yet.
 - `tires.lateral_load_transfer_grip_loss`: small global grip trim as lateral
   load transfer rises.
 - `tires.load_sensitivity`: heavily loaded tires become slightly less efficient.
-- `tires.front_roll_stiffness_fraction`: share of lateral load transfer handled
-  by the front tires.
+- `tires.front_roll_stiffness_fraction`: legacy fallback share of lateral load
+  transfer handled by the front tires when the suspension ARB roll-stiffness
+  fields are absent.
 - `body.front_weight_fraction`: static front load share.
 - `body.center_of_mass_height_m`: higher values increase braking and throttle
   load transfer and left/right transfer in corners.
 - `body.track_width_m`: wider values reduce the current lateral load-transfer
   effect.
+- `suspension.front_arb_nm_per_rad` and `rear_arb_nm_per_rad`: anti-roll-bar
+  contribution to roll-axis load-transfer distribution. More front ARB shifts
+  load transfer forward and increases understeer; more rear ARB shifts it
+  rearward and makes the car more willing to rotate.
 
 More front stiffness generally sharpens turn-in. Excess rear stiffness relative
 to available rear grip can make the car less forgiving.

@@ -147,6 +147,18 @@ void VehicleConfig::load(const ConfigFile& config) {
     rearAntiRollBarNPerM = std::max(
         0.0F,
         config.getFloat("suspension.rear_anti_roll_bar_n_per_m", rearAntiRollBarNPerM));
+    const float loadedFrontArbNmPerRad =
+        config.getFloat("suspension.front_arb_nm_per_rad", -1.0F);
+    const float loadedRearArbNmPerRad =
+        config.getFloat("suspension.rear_arb_nm_per_rad", -1.0F);
+    useDynamicRollStiffnessFraction =
+        loadedFrontArbNmPerRad >= 0.0F && loadedRearArbNmPerRad >= 0.0F;
+    frontAntiRollBarNmPerRad = useDynamicRollStiffnessFraction
+        ? std::clamp(loadedFrontArbNmPerRad, 0.0F, 250000.0F)
+        : 0.0F;
+    rearAntiRollBarNmPerRad = useDynamicRollStiffnessFraction
+        ? std::clamp(loadedRearArbNmPerRad, 0.0F, 250000.0F)
+        : 0.0F;
     maxSuspensionCompressionM = std::clamp(
         config.getFloat("suspension.max_compression_m", maxSuspensionCompressionM),
         0.015F,

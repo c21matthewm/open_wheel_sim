@@ -60,6 +60,9 @@ struct VehicleConfig {
     float rearDamperNPerMps = 9800.0F;
     float frontAntiRollBarNPerM = 38000.0F;
     float rearAntiRollBarNPerM = 34000.0F;
+    float frontAntiRollBarNmPerRad = 0.0F;
+    float rearAntiRollBarNmPerRad = 0.0F;
+    bool useDynamicRollStiffnessFraction = false;
     float maxSuspensionCompressionM = 0.085F;
     float maxSuspensionDroopM = 0.055F;
     float bumpStopRateNPerM = 450000.0F;

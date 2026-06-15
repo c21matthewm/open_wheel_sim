@@ -127,6 +127,9 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.tireRelaxationLengthMinM, 0.15F) ||
         !near(vehicleConfig.tireRelaxationLengthMaxM, 0.90F) ||
         !near(vehicleConfig.frontSpringRateNPerM, 100000.0F) ||
+        !near(vehicleConfig.frontAntiRollBarNmPerRad, 18000.0F) ||
+        !near(vehicleConfig.rearAntiRollBarNmPerRad, 12000.0F) ||
+        !vehicleConfig.useDynamicRollStiffnessFraction ||
         !near(vehicleConfig.rearStaticRideHeightM, 0.060F) ||
         !near(vehicleConfig.wheelInertiaKgM2, 1.25F) ||
         !near(vehicleConfig.maxGroundEffectMultiplier, 2.90F) ||
@@ -389,6 +392,22 @@ int main(int argc, char** argv) {
         std::cerr << "Load-dependent relaxation length telemetry did not vary within clamps"
                   << " minRelax=" << minimumRelaxationLengthM
                   << " maxRelax=" << maximumRelaxationLengthM << '\n';
+        return 1;
+    }
+    const float expectedFrontRollStiffness =
+        0.5F * vehicleConfig.frontSpringRateNPerM *
+            vehicleConfig.trackWidthM * vehicleConfig.trackWidthM +
+        vehicleConfig.frontAntiRollBarNmPerRad;
+    const float expectedRearRollStiffness =
+        0.5F * vehicleConfig.rearSpringRateNPerM *
+            vehicleConfig.trackWidthM * vehicleConfig.trackWidthM +
+        vehicleConfig.rearAntiRollBarNmPerRad;
+    const float expectedFrontRollFraction =
+        expectedFrontRollStiffness / (expectedFrontRollStiffness + expectedRearRollStiffness);
+    if (!near(rigidBodyVehicle.current().frontRollStiffnessNmPerRad, expectedFrontRollStiffness, 0.5F) ||
+        !near(rigidBodyVehicle.current().rearRollStiffnessNmPerRad, expectedRearRollStiffness, 0.5F) ||
+        !near(rigidBodyVehicle.current().frontRollStiffnessFraction, expectedFrontRollFraction, 0.001F)) {
+        std::cerr << "Dynamic ARB roll-stiffness telemetry did not match setup-derived balance\n";
         return 1;
     }
 

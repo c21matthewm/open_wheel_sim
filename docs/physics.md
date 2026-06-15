@@ -150,8 +150,20 @@ Lateral load transfer changes left/right normal load:
 transfer = mass * lateral_acceleration * center_of_mass_height / track_width
 ```
 
-`tires.front_roll_stiffness_fraction` controls how much of that transfer lands
-on the front pair versus the rear pair. Tire grip uses degressive load
+By default, the front/rear share of lateral load transfer is derived each step
+from setup roll stiffness:
+
+```text
+front_roll_stiffness = 0.5 * front_spring_rate * track_width^2
+                       + suspension.front_arb_nm_per_rad
+rear_roll_stiffness  = 0.5 * rear_spring_rate * track_width^2
+                       + suspension.rear_arb_nm_per_rad
+front_roll_fraction  = front_roll_stiffness
+                       / (front_roll_stiffness + rear_roll_stiffness)
+```
+
+Legacy configs without both ARB roll-stiffness fields fall back to
+`tires.front_roll_stiffness_fraction`. Tire grip uses degressive load
 sensitivity: `tires.load_sensitivity_coeff`,
 `tires.load_sensitivity_min_efficiency`, and
 `tires.load_reference_normal_n` make a heavily loaded tire generate less force

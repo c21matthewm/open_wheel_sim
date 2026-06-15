@@ -688,7 +688,21 @@ void Vehicle::step(
     const float totalLateralTransfer =
         config_.massKg * current_.lateralG * kGravity * config_.centerOfMassHeightM /
         std::max(0.1F, config_.trackWidthM);
-    const float frontLateralTransfer = totalLateralTransfer * config_.frontRollStiffnessFraction;
+    const float springRollScale = square(config_.trackWidthM);
+    const float frontRollStiffnessNmPerRad =
+        config_.useDynamicRollStiffnessFraction
+            ? 0.5F * config_.frontSpringRateNPerM * springRollScale + config_.frontAntiRollBarNmPerRad
+            : 0.0F;
+    const float rearRollStiffnessNmPerRad =
+        config_.useDynamicRollStiffnessFraction
+            ? 0.5F * config_.rearSpringRateNPerM * springRollScale + config_.rearAntiRollBarNmPerRad
+            : 0.0F;
+    const float frontRollStiffnessFraction =
+        config_.useDynamicRollStiffnessFraction
+            ? frontRollStiffnessNmPerRad /
+                  std::max(1.0F, frontRollStiffnessNmPerRad + rearRollStiffnessNmPerRad)
+            : config_.frontRollStiffnessFraction;
+    const float frontLateralTransfer = totalLateralTransfer * frontRollStiffnessFraction;
     const float rearLateralTransfer = totalLateralTransfer - frontLateralTransfer;
     tireNormalLoad[kFrontLeft] += -longitudinalLoadTransfer * 0.5F + frontLateralTransfer * 0.5F;
     tireNormalLoad[kFrontRight] += -longitudinalLoadTransfer * 0.5F - frontLateralTransfer * 0.5F;
@@ -1164,6 +1178,9 @@ void Vehicle::step(
     current_.frontRightNormalLoadN = frontRight.normalLoadN;
     current_.rearLeftNormalLoadN = rearLeft.normalLoadN;
     current_.rearRightNormalLoadN = rearRight.normalLoadN;
+    current_.frontRollStiffnessNmPerRad = frontRollStiffnessNmPerRad;
+    current_.rearRollStiffnessNmPerRad = rearRollStiffnessNmPerRad;
+    current_.frontRollStiffnessFraction = frontRollStiffnessFraction;
     current_.frontLateralForceN = frontLeft.bodyLateralN + frontRight.bodyLateralN;
     current_.rearLateralForceN = rearLeft.bodyLateralN + rearRight.bodyLateralN;
     current_.frontLeftLateralForceN = frontLeft.bodyLateralN;

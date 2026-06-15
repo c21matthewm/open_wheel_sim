@@ -145,6 +145,9 @@ The current app can:
   suppression when 1st/2nd-gear launch wheelspin spikes rear-wheel RPM, strict
   manual mode when automatic transmission is disabled, and per-corner tire
   temperature/thermal-grip evolution from sustained slip/usage
+- derive front/rear roll-axis load-transfer distribution from setup spring
+  rates and anti-roll-bar Nm/rad stiffness when configured, with legacy
+  `tires.front_roll_stiffness_fraction` fallback for older configs
 - calculate ground-effect aero from current compressed front/rear ride height
   and rake, including exponential ride-height gain, tunnel-balance CoP shift,
   braking CoP migration, undertray stall/bottoming reduction, asymmetric
