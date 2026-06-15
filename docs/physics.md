@@ -42,6 +42,18 @@ returning scaled forces. This is important for high-speed coasting stability:
 off-throttle wheels can still generate lateral force instead of accidentally
 collapsing lateral grip to the longitudinal demand.
 
+Tire temperature maps to grip through a Gaussian peak window:
+
+```text
+delta = tire_temperature_c - tires.thermal_optimal_c
+thermal_grip = tires.thermal_grip_min
+               + (1 - tires.thermal_grip_min)
+                 * exp(-(delta^2) / (2 * tires.thermal_window_c^2))
+```
+
+This makes cold tires greasy, peaks grip near the configured target
+temperature, and reduces grip again when tires are overheated.
+
 Static setup camber contributes camber thrust before the combined-slip limiter:
 
 ```text

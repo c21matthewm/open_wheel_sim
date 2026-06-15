@@ -179,13 +179,19 @@ float wheelFrictionLimit(
     return std::max(1.0F, baseFriction * loadEfficiency * normalLoadN);
 }
 
-float tireThermalGripScale(float temperatureC) {
-    const float coldWarmup = smoothStep(45.0F, 88.0F, temperatureC);
-    const float coldScale = 0.72F + 0.30F * coldWarmup;
-    const float optimum =
-        0.04F * (1.0F - std::abs(std::clamp((temperatureC - 96.0F) / 30.0F, -1.0F, 1.0F)));
-    const float heatLoss = 1.0F - 0.34F * smoothStep(112.0F, 154.0F, temperatureC);
-    return std::clamp(coldScale * heatLoss + optimum, 0.62F, 1.06F);
+float tireThermalGripScale(
+    float temperatureC,
+    float optimalTemperatureC,
+    float windowC,
+    float minimumGrip) {
+    const float safeWindow = std::max(1.0F, windowC);
+    const float delta = temperatureC - optimalTemperatureC;
+    const float gaussian =
+        std::exp(-(delta * delta) / (2.0F * safeWindow * safeWindow));
+    return std::clamp(
+        minimumGrip + (1.0F - minimumGrip) * gaussian,
+        minimumGrip,
+        1.0F);
 }
 
 float updatedTireTemperature(
@@ -417,7 +423,11 @@ void Vehicle::resetDynamicState() {
     current_.frontRightTireTemperatureC = kInitialTireTemperatureC;
     current_.rearLeftTireTemperatureC = kInitialTireTemperatureC;
     current_.rearRightTireTemperatureC = kInitialTireTemperatureC;
-    current_.frontLeftThermalGrip = tireThermalGripScale(kInitialTireTemperatureC);
+    current_.frontLeftThermalGrip = tireThermalGripScale(
+        kInitialTireTemperatureC,
+        config_.tireThermalOptimalC,
+        config_.tireThermalWindowC,
+        config_.tireThermalGripMin);
     current_.frontRightThermalGrip = current_.frontLeftThermalGrip;
     current_.rearLeftThermalGrip = current_.frontLeftThermalGrip;
     current_.rearRightThermalGrip = current_.frontLeftThermalGrip;
@@ -816,7 +826,11 @@ void Vehicle::step(
     }};
     std::array<float, kWheelCount> thermalGrip{};
     for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
-        thermalGrip[wheel] = tireThermalGripScale(tireTemperature[wheel]);
+        thermalGrip[wheel] = tireThermalGripScale(
+            tireTemperature[wheel],
+            config_.tireThermalOptimalC,
+            config_.tireThermalWindowC,
+            config_.tireThermalGripMin);
     }
 
     const float driveTorqueTotal =
@@ -1049,7 +1063,11 @@ void Vehicle::step(
             config_.lateralPeakSlipAngleRadians,
             config_.longitudinalPeakSlipRatio,
             safeDt);
-        thermalGrip[wheel] = tireThermalGripScale(tireTemperature[wheel]);
+        thermalGrip[wheel] = tireThermalGripScale(
+            tireTemperature[wheel],
+            config_.tireThermalOptimalC,
+            config_.tireThermalWindowC,
+            config_.tireThermalGripMin);
     }
 
     for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {

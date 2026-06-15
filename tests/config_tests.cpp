@@ -126,6 +126,9 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.tireRelaxationLengthBaseM, 0.40F) ||
         !near(vehicleConfig.tireRelaxationLengthMinM, 0.15F) ||
         !near(vehicleConfig.tireRelaxationLengthMaxM, 0.90F) ||
+        !near(vehicleConfig.tireThermalOptimalC, 95.0F) ||
+        !near(vehicleConfig.tireThermalWindowC, 35.0F) ||
+        !near(vehicleConfig.tireThermalGripMin, 0.72F) ||
         !near(vehicleConfig.frontSpringRateNPerM, 100000.0F) ||
         !near(vehicleConfig.frontAntiRollBarNmPerRad, 18000.0F) ||
         !near(vehicleConfig.rearAntiRollBarNmPerRad, 12000.0F) ||

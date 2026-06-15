@@ -144,7 +144,8 @@ The current app can:
   cooldown, smooth manual-mode RPM limiter bounce, RPM, automatic upshift
   suppression when 1st/2nd-gear launch wheelspin spikes rear-wheel RPM, strict
   manual mode when automatic transmission is disabled, and per-corner tire
-  temperature/thermal-grip evolution from sustained slip/usage
+  temperature evolution from sustained slip/usage with a Gaussian optimal
+  thermal-grip window and cold/overheated grip loss
 - derive front/rear roll-axis load-transfer distribution from setup spring
   rates and anti-roll-bar Nm/rad stiffness when configured, with legacy
   `tires.front_roll_stiffness_fraction` fallback for older configs

@@ -29,6 +29,11 @@ current run. These runtime changes are not written back to JSON yet.
   where longitudinal grip peaks.
 - `tires.curve_shape_factor`, `curve_curvature_factor`, `post_peak_falloff`:
   compact tire-curve shape controls for peak sharpness and post-peak falloff.
+- `tires.thermal_optimal_c`: tire temperature where thermal grip peaks.
+- `tires.thermal_window_c`: Gaussian grip-window width around the optimal
+  temperature. Narrower values make warm-up and overheating more punishing.
+- `tires.thermal_grip_min`: minimum thermal grip multiplier for very cold or
+  overheated tires.
 - `tires.lateral_load_transfer_grip_loss`: small global grip trim as lateral
   load transfer rises.
 - `tires.load_sensitivity`: heavily loaded tires become slightly less efficient.
