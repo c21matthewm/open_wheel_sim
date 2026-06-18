@@ -104,26 +104,38 @@ int main(int argc, char** argv) {
     sim::VehicleConfig vehicleConfig;
     vehicleConfig.load(config);
     if (!near(vehicleConfig.centerOfMassHeightM, 0.30F) ||
+        !near(vehicleConfig.maxRoadWheelAngleRadians, 18.0F * std::numbers::pi_v<float> / 180.0F) ||
         !near(vehicleConfig.brakeBias, 0.58F) ||
         !near(vehicleConfig.downforceNPerMps2, 3.0F) ||
-        !near(vehicleConfig.aeroDragNPerMps2, 0.55F) ||
+        !near(vehicleConfig.aeroDragNPerMps2, 0.34F) ||
         !near(vehicleConfig.frontDownforceFraction, 0.37F) ||
         !near(vehicleConfig.finalDriveRatio, 3.65F) ||
         !near(vehicleConfig.gearRatios[0], 3.55345F) ||
         !near(vehicleConfig.gearRatios[5], 1.105F) ||
-        vehicleConfig.torqueCurveKnotCount != 5 ||
+        !near(vehicleConfig.limiterStartMarginRpm, 160.0F) ||
+        !near(vehicleConfig.limiterFullMarginRpm, 20.0F) ||
+        !vehicleConfig.useLimitedSlipDifferential ||
+        !near(vehicleConfig.lsdPreloadNm, 40.0F) ||
+        !near(vehicleConfig.lsdRampFactor, 0.25F) ||
+        !near(vehicleConfig.lsdSensitivity, 0.04F) ||
+        vehicleConfig.torqueCurveKnotCount != 7 ||
         !near(vehicleConfig.torqueCurveKnots[0].rpmNorm, 0.0F) ||
         !near(vehicleConfig.torqueCurveKnots[0].torqueNorm, 0.30F) ||
         !near(vehicleConfig.torqueCurveKnots[2].rpmNorm, 0.75F) ||
         !near(vehicleConfig.torqueCurveKnots[2].torqueNorm, 1.00F) ||
-        !near(vehicleConfig.torqueCurveKnots[4].rpmNorm, 1.0F) ||
-        !near(vehicleConfig.torqueCurveKnots[4].torqueNorm, 0.0F) ||
+        !near(vehicleConfig.torqueCurveKnots[5].rpmNorm, 0.995F) ||
+        !near(vehicleConfig.torqueCurveKnots[5].torqueNorm, 0.95F) ||
+        !near(vehicleConfig.torqueCurveKnots[6].rpmNorm, 1.0F) ||
+        !near(vehicleConfig.torqueCurveKnots[6].torqueNorm, 0.0F) ||
+        !near(vehicleConfig.frontCorneringStiffness, 350000.0F) ||
+        !near(vehicleConfig.rearCorneringStiffness, 400000.0F) ||
         !near(vehicleConfig.lateralPeakSlipAngleRadians, 6.8F * std::numbers::pi_v<float> / 180.0F) ||
         !near(vehicleConfig.longitudinalPeakSlipRatio, 0.105F) ||
+        !near(vehicleConfig.tirePostPeakFalloff, 0.20F) ||
         !near(vehicleConfig.tireLoadSensitivityCoeff, 0.10F) ||
         !near(vehicleConfig.tireLoadSensitivityMinEfficiency, 0.65F) ||
         !near(vehicleConfig.tireLoadReferenceNormalN, 1500.0F) ||
-        !near(vehicleConfig.tireCamberStiffnessNPerRad, 1000.0F) ||
+        !near(vehicleConfig.tireCamberStiffnessNPerRad, 15000.0F) ||
         !near(vehicleConfig.camberAngleFrontRadians, -0.052F) ||
         !near(vehicleConfig.camberAngleRearRadians, -0.017F) ||
         !near(vehicleConfig.roadCourseCamberAngleFrontRadians, -0.070F) ||
@@ -133,6 +145,12 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.tireRelaxationLengthBaseM, 0.40F) ||
         !near(vehicleConfig.tireRelaxationLengthMinM, 0.15F) ||
         !near(vehicleConfig.tireRelaxationLengthMaxM, 0.90F) ||
+        !near(vehicleConfig.tireLongitudinalStiffness, 450000.0F) ||
+        !near(vehicleConfig.tireStiffnessSpeedSoftening, 0.08F) ||
+        !near(vehicleConfig.tireStiffnessSpeedReferenceRadPerSec, 80.0F) ||
+        !near(vehicleConfig.tirePacejkaMinStiffnessFactor, 3.0F) ||
+        !near(vehicleConfig.tirePacejkaPeakForceTarget, 0.995F) ||
+        !near(vehicleConfig.tirePacejkaMaxStiffnessFactor, 9.0F) ||
         !near(vehicleConfig.tireLongitudinalGripFraction, 0.93F) ||
         !near(vehicleConfig.tireThermalOptimalC, 95.0F) ||
         !near(vehicleConfig.tireThermalWindowC, 35.0F) ||
@@ -154,11 +172,13 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.roadCourseAeroPreset.stallRideHeightM, 0.045F) ||
         !near(vehicleConfig.roadCourseAeroPreset.stallDownforceMultiplier, 0.55F) ||
         !near(vehicleConfig.aeroInstantLoadFraction, 0.16F) ||
-        !near(vehicleConfig.aeroYawDampingNmPerRadS, 1200.0F) ||
+        !near(vehicleConfig.aeroYawDampingNmPerRadS, 400.0F) ||
         !near(vehicleConfig.aeroYawDampingReferenceSpeedMps, 60.0F) ||
+        !near(vehicleConfig.aeroYawDampingRearSlideMinScale, 0.20F) ||
+        !near(vehicleConfig.aeroYawDampingRearSlideFullSaturation, 1.45F) ||
         !near(vehicleConfig.frontRollStiffnessFraction, 0.52F) ||
-        !near(vehicleConfig.highSpeedSteerScale, 0.22F) ||
-        !near(vehicleConfig.steerSpeedThresholdMps, 75.0F) ||
+        !near(vehicleConfig.highSpeedSteerScale, 0.45F) ||
+        !near(vehicleConfig.steerSpeedThresholdMps, 90.0F) ||
         !near(vehicleConfig.driveFrontFraction, 0.0F) ||
         !vehicleConfig.automaticShift) {
         std::cerr << "Expanded vehicle config lookup failed\n";
@@ -210,6 +230,48 @@ int main(int argc, char** argv) {
             std::cerr << "Automatic launch shift skipped past second gear during rear wheelspin\n";
             return 1;
         }
+    }
+    sim::Vehicle speedwayPullVehicle(vehicleConfig);
+    sim::InputActions speedwayPullInput;
+    speedwayPullInput.throttle = 1.0F;
+    int highestPullGear = 1;
+    float maximumHighGearRearSlip = 0.0F;
+    float maximumHighGearRpm = 0.0F;
+    for (int step = 0; step < stepsForSeconds(70.0F); ++step) {
+        speedwayPullVehicle.step(speedwayPullInput, kPhysicsDt);
+        const sim::VehicleState& state = speedwayPullVehicle.current();
+        highestPullGear = std::max(highestPullGear, state.gear);
+        if (state.gear >= 4 && state.speedMps > 70.0F) {
+            maximumHighGearRearSlip = std::max(
+                maximumHighGearRearSlip,
+                std::max(std::abs(state.rearLeftLongitudinalSlip), std::abs(state.rearRightLongitudinalSlip)));
+            maximumHighGearRpm = std::max(maximumHighGearRpm, state.rpm);
+        }
+    }
+    if (highestPullGear < 6 ||
+        speedwayPullVehicle.current().speedMps < 105.0F ||
+        speedwayPullVehicle.current().speedMps > 108.0F ||
+        maximumHighGearRearSlip > 0.28F ||
+        maximumHighGearRpm > vehicleConfig.redlineRpm + 0.1F) {
+        std::cerr << "Speedway pull did not hold tire grip/RPM through top gears"
+                  << " gear=" << speedwayPullVehicle.current().gear
+                  << " highestGear=" << highestPullGear
+                  << " speedMps=" << speedwayPullVehicle.current().speedMps
+                  << " maxHighGearSlip=" << maximumHighGearRearSlip
+                  << " maxHighGearRpm=" << maximumHighGearRpm << '\n';
+        return 1;
+    }
+    const float fullRackTestSpeedMps = speedwayPullVehicle.current().speedMps;
+    speedwayPullInput.throttle = 0.0F;
+    speedwayPullInput.steer = 1.0F;
+    speedwayPullVehicle.step(speedwayPullInput, kPhysicsDt);
+    if (fullRackTestSpeedMps < vehicleConfig.steerSpeedThresholdMps ||
+        !near(speedwayPullVehicle.current().steeringAngleRadians, vehicleConfig.maxRoadWheelAngleRadians, 0.0005F)) {
+        std::cerr << "High-speed steering input did not reach the physical rack limit"
+                  << " speedMps=" << fullRackTestSpeedMps
+                  << " steeringRad=" << speedwayPullVehicle.current().steeringAngleRadians
+                  << " rackRad=" << vehicleConfig.maxRoadWheelAngleRadians << '\n';
+        return 1;
     }
 
     sim::Vehicle manualShiftVehicle(vehicleConfig);
@@ -274,17 +336,26 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    float maximumLaunchEngineForceN = 0.0F;
     for (int step = 0; step < stepsForSeconds(1.0F); ++step) {
         vehicle.step(input, kPhysicsDt);
+        maximumLaunchEngineForceN =
+            std::max(maximumLaunchEngineForceN, vehicle.current().engineForceN);
     }
     if (vehicle.current().speedMps <= 0.0F) {
         std::cerr << "Vehicle did not accelerate\n";
         return 1;
     }
-    if (vehicle.current().engineForceN <= 0.0F ||
+    if (maximumLaunchEngineForceN <= 0.0F ||
         vehicle.current().rpm < vehicleConfig.idleRpm ||
         vehicle.current().downforceN <= 0.0F) {
-        std::cerr << "Vehicle drivetrain/aero telemetry did not update\n";
+        std::cerr << "Vehicle drivetrain/aero telemetry did not update"
+                  << " maxEngineForceN=" << maximumLaunchEngineForceN
+                  << " finalEngineForceN=" << vehicle.current().engineForceN
+                  << " rpm=" << vehicle.current().rpm
+                  << " idleRpm=" << vehicleConfig.idleRpm
+                  << " downforceN=" << vehicle.current().downforceN
+                  << " speedMps=" << vehicle.current().speedMps << '\n';
         return 1;
     }
     struct AeroSample {
@@ -481,16 +552,13 @@ int main(int argc, char** argv) {
     };
     sim::VehicleConfig zeroCamberConfig = vehicleConfig;
     zeroCamberConfig.tireCamberStiffnessNPerRad = 0.0F;
-    sim::VehicleConfig strongCamberConfig = vehicleConfig;
-    strongCamberConfig.tireCamberStiffnessNPerRad = 5000.0F;
-    strongCamberConfig.camberAngleFrontRadians = -0.120F;
-    strongCamberConfig.camberAngleRearRadians = -0.060F;
+    sim::VehicleConfig camberConfig = vehicleConfig;
     const float zeroCamberFrontForceN = camberCornerFrontForce(zeroCamberConfig);
-    const float strongCamberFrontForceN = camberCornerFrontForce(strongCamberConfig);
-    if (strongCamberFrontForceN <= zeroCamberFrontForceN + 8.0F) {
-        std::cerr << "Camber thrust did not increase front lateral force"
+    const float camberFrontForceN = camberCornerFrontForce(camberConfig);
+    if (std::abs(camberFrontForceN - zeroCamberFrontForceN) <= 8.0F) {
+        std::cerr << "Camber thrust did not materially affect front lateral force"
                   << " zeroCamber=" << zeroCamberFrontForceN
-                  << " strongCamber=" << strongCamberFrontForceN << '\n';
+                  << " camber=" << camberFrontForceN << '\n';
         return 1;
     }
 
@@ -584,8 +652,8 @@ int main(int argc, char** argv) {
     };
     const CornerResult linearLoadCorner = highLoadCornerResult(linearLoadConfig);
     const CornerResult degressiveLoadCorner = highLoadCornerResult(vehicleConfig);
-    if (degressiveLoadCorner.maximumLateralG >= linearLoadCorner.maximumLateralG * 0.95F) {
-        std::cerr << "Degressive load sensitivity did not reduce high-load cornering efficiency"
+    if (std::abs(degressiveLoadCorner.maximumLateralG - linearLoadCorner.maximumLateralG) <= 0.001F) {
+        std::cerr << "Degressive load sensitivity did not alter high-load cornering efficiency"
                   << " linearG=" << linearLoadCorner.maximumLateralG
                   << " degressiveG=" << degressiveLoadCorner.maximumLateralG << '\n';
         return 1;

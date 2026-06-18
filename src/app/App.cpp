@@ -86,6 +86,7 @@ int App::run() {
         const InputActions drivingActions = drivingActionsFor(actions);
         measured.inputMs = milliseconds(inputStart, Clock::now());
 
+        raceSession_->beginRenderFrame();
         const Clock::time_point physicsStart = Clock::now();
         while (gameLoop.shouldStep()) {
             if (!menuVisible_) {
@@ -225,6 +226,9 @@ bool App::initialize() {
         return false;
     }
     input_.initialize(inputConfig_);
+    input_.setKeyboardHighSpeedResponse(
+        vehicleConfig_.highSpeedSteerScale,
+        vehicleConfig_.steerSpeedThresholdMps);
     if (!sound_.initialize()) {
         std::fprintf(stderr, "Audio disabled: %s\n", sound_.error().c_str());
     }

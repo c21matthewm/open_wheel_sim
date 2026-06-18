@@ -103,7 +103,7 @@ void VehicleConfig::load(const ConfigFile& config) {
     unsprungMassPerWheelKg =
         std::clamp(config.getFloat("body.unsprung_mass_per_wheel_kg", unsprungMassPerWheelKg), 5.0F, 60.0F);
     const float steeringDegrees =
-        std::clamp(config.getFloat("steering.max_road_wheel_angle_deg", 20.0F), 1.0F, 45.0F);
+        std::clamp(config.getFloat("steering.max_road_wheel_angle_deg", 18.0F), 1.0F, 45.0F);
     maxRoadWheelAngleRadians = steeringDegrees * std::numbers::pi_v<float> / 180.0F;
     highSpeedSteerScale =
         std::clamp(config.getFloat("steering.high_speed_steer_scale", highSpeedSteerScale), 0.02F, 1.0F);
@@ -161,7 +161,7 @@ void VehicleConfig::load(const ConfigFile& config) {
     tireCamberStiffnessNPerRad = std::clamp(
         config.getFloat("tires.camber_stiffness_n_per_rad", tireCamberStiffnessNPerRad),
         0.0F,
-        5000.0F);
+        50000.0F);
     speedwayCamberAngleFrontRadians = std::clamp(
         config.getFloat("tires.camber_angle_front_rad", speedwayCamberAngleFrontRadians),
         -0.18F,
@@ -205,6 +205,26 @@ void VehicleConfig::load(const ConfigFile& config) {
     tireLongitudinalStiffness = std::max(
         1000.0F,
         config.getFloat("tires.longitudinal_stiffness_n", tireLongitudinalStiffness));
+    tireStiffnessSpeedSoftening = std::clamp(
+        config.getFloat("tires.stiffness_speed_softening", tireStiffnessSpeedSoftening),
+        0.0F,
+        1.0F);
+    tireStiffnessSpeedReferenceRadPerSec = std::clamp(
+        config.getFloat("tires.stiffness_speed_ref_rps", tireStiffnessSpeedReferenceRadPerSec),
+        1.0F,
+        500.0F);
+    tirePacejkaMaxStiffnessFactor = std::clamp(
+        config.getFloat("tires.pacejka_max_stiffness_factor", tirePacejkaMaxStiffnessFactor),
+        1.0F,
+        20.0F);
+    tirePacejkaMinStiffnessFactor = std::clamp(
+        config.getFloat("tires.pacejka_min_stiffness_factor", tirePacejkaMinStiffnessFactor),
+        0.05F,
+        tirePacejkaMaxStiffnessFactor);
+    tirePacejkaPeakForceTarget = std::clamp(
+        config.getFloat("tires.pacejka_peak_force_target", tirePacejkaPeakForceTarget),
+        0.80F,
+        0.9999F);
     tireLongitudinalGripFraction = std::clamp(
         config.getFloat("tires.longitudinal_grip_fraction", tireLongitudinalGripFraction),
         0.50F,
@@ -289,6 +309,27 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("powertrain.differential_load_bias", differentialLoadBias),
         0.0F,
         1.0F);
+    const float configuredLsdPreload = config.getFloat("powertrain.lsd_preload_nm", -1.0F);
+    const float configuredLsdRamp = config.getFloat("powertrain.lsd_ramp_factor", -1.0F);
+    const float configuredLsdSensitivity = config.getFloat("powertrain.lsd_sensitivity", -1.0F);
+    useLimitedSlipDifferential =
+        configuredLsdPreload >= 0.0F ||
+        configuredLsdRamp >= 0.0F ||
+        configuredLsdSensitivity >= 0.0F;
+    if (useLimitedSlipDifferential) {
+        lsdPreloadNm = std::clamp(
+            configuredLsdPreload >= 0.0F ? configuredLsdPreload : lsdPreloadNm,
+            0.0F,
+            400.0F);
+        lsdRampFactor = std::clamp(
+            configuredLsdRamp >= 0.0F ? configuredLsdRamp : lsdRampFactor,
+            0.0F,
+            2.0F);
+        lsdSensitivity = std::clamp(
+            configuredLsdSensitivity >= 0.0F ? configuredLsdSensitivity : lsdSensitivity,
+            0.0F,
+            1.0F);
+    }
     wheelRadiusM =
         std::max(0.1F, config.getFloat("powertrain.wheel_radius_m", wheelRadiusM));
     wheelInertiaKgM2 =
@@ -310,6 +351,14 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("powertrain.shift_down_rpm", shiftDownRpm),
         idleRpm,
         shiftUpRpm - 250.0F);
+    limiterStartMarginRpm = std::clamp(
+        config.getFloat("powertrain.limiter_start_margin_rpm", limiterStartMarginRpm),
+        10.0F,
+        800.0F);
+    limiterFullMarginRpm = std::clamp(
+        config.getFloat("powertrain.limiter_full_margin_rpm", limiterFullMarginRpm),
+        1.0F,
+        limiterStartMarginRpm - 1.0F);
     loadTorqueCurveKnots(
         config.getString("powertrain.torque_curve_knots", ""),
         torqueCurveKnots,
@@ -378,6 +427,14 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("aero.yaw_damping_reference_speed_mps", aeroYawDampingReferenceSpeedMps),
         5.0F,
         120.0F);
+    aeroYawDampingRearSlideMinScale = std::clamp(
+        config.getFloat("aero.yaw_damping_rear_slide_min_scale", aeroYawDampingRearSlideMinScale),
+        0.0F,
+        1.0F);
+    aeroYawDampingRearSlideFullSaturation = std::clamp(
+        config.getFloat("aero.yaw_damping_rear_slide_full_saturation", aeroYawDampingRearSlideFullSaturation),
+        1.01F,
+        4.0F);
     minFrontDownforceFraction = std::clamp(
         config.getFloat("aero.min_front_downforce_fraction", minFrontDownforceFraction),
         0.05F,

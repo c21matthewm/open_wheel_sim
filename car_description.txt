@@ -1,0 +1,51 @@
+Sim Racing Car Description (IR-18)
+
+The sim racing car should be an IR-18-inspired open-wheel car using real-world spec proportions.
+
+TARGET DIMENSIONS
+- Length: 5123 mm
+- Width: adjustable by rules envelope, target 1943 mm road-course max
+- Height: 1016 mm
+- Wheelbase: adjustable 2985-3086 mm, default near 3035 mm for a neutral baseline
+- Front wheel size: 15 in diameter x 10 in width
+- Rear wheel size: 15 in diameter x 14 in width
+- Front tire OD: about 25.5 in
+- Rear tire OD: about 27.0 in
+
+VISUAL SHAPE
+- Very low nose
+- Open wheels clearly separated from body
+- Tight, narrow monocoque center section
+- Cockpit opening slightly aft of front axle line
+- Side profile should be wedge-like and stretched, not chunky
+- Rear bodywork compact and tapered
+- Use a simple shadow/silhouette first before adding aero detail
+
+PHYSICS TARGET
+- Mass target without driver/fuel near 725-740 kg depending on track configuration
+- Power band 550-700 hp depending on boost mode
+- 6-speed paddle-shift gearbox
+- Strong aero dependence above medium speed
+- High brake power and short stopping distances
+- Quick steering response, fast yaw rotation, but punish over-commitment when aero platform is disturbed
+- Road course aero package = higher downforce and drag
+- Speedway aero package = lower drag, lower downforce, more pitch/yaw sensitivity in traffic
+
+GAMEPLAY FEEL
+- Car should feel nervous when unloaded, planted when speed and aero are present
+- Dirty air should reduce front grip semi-noticeably
+- Curb strikes should upset platform more than in heavier GT cars
+- Throttle application should require precision because power-to-weight is extreme
+- Setup changes to wing, ride height, and anti-roll balance should be very noticeableFront wing should look light and efficient, not bulky.
+- Keep the assembly low to the ground and visually wide.
+- Mainplane should be thin in section.
+- Use minimal endplate mass; outer tips should taper and feel blade-like.
+- Avoid square boxed ends, thick vertical slabs, or oversized footplates.
+- On speedway trim, bias the shape toward a flatter single-plane look.
+- On road-course trim, allow more flap depth, but keep the outer ends visually light.Rear wing should be compact, clean, and tensioned.
+- Keep the wing visually smaller than a modern F1-style rear wing.
+- Supports should be slim and mechanically plausible.
+- End treatment should be minimal; do not use oversized slab endplates.
+- Speedway trim should move toward a single-plane, no-endplate look.
+- Road/street trim can use more flap area, but the whole rear wing should still look light and narrow-edged.
+- Rear bodywork and wing should feel integrated, not like a large box sitting on top of the gearbox.

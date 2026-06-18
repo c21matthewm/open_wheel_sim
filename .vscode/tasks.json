@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Sim: Configure Debug",
+      "type": "shell",
+      "command": "cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Sim: Build Debug",
+      "type": "shell",
+      "command": "cmake --build build --config Debug --parallel",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Sim: Configure Debug",
+      "problemMatcher": "$gcc",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Sim: Build and Run",
+      "type": "shell",
+      "command": "./scripts/build_and_run.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": "$gcc",
+      "group": "build"
+    },
+    {
+      "label": "Sim: Test",
+      "type": "shell",
+      "command": "ctest --test-dir build --output-on-failure",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Sim: Build Debug",
+      "problemMatcher": [],
+      "group": "test"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: June 13, 2026
+Last updated: June 18, 2026
 
 This is the canonical current-state document for the Lightweight Open-Wheel Sim
 Prototype. It explains what exists now, how the application works, what has
@@ -124,8 +124,8 @@ The current app can:
 - render a small 3D digital display onto the animated steering wheel using the
   generated SDF font, showing gear, speed in MPH, RPM, lap time, and delta
 - drive the procedural car with keyboard input using retuned, smoother
-  speed-sensitive keyboard steering rates and a config-driven high-speed
-  road-wheel-angle cap that preserves enough steering lock for cornering
+  speed-sensitive keyboard steering rates; full steering input now maps to the
+  configured physical rack limit at every speed
 - simulate vehicle motion at a fixed default rate of 360 Hz
 - render independently from physics and interpolate the vehicle transform
 - simulate a sprung chassis with heave, pitch, and roll DOFs, four unsprung
@@ -134,16 +134,21 @@ The current app can:
   sensitivity, static setup camber thrust applied before combined-slip limiting,
   front and rear pneumatic/mechanical trail aligning moment in the tire solver,
   load/speed-dependent transient tire relaxation length,
-  Pacejka-lite tire peak/falloff force curves,
+  Pacejka-lite tire peak/falloff force curves with config-backed minimum
+  peak-capable stiffness-factor guarding,
   longitudinal slip-ratio relaxation for progressive wheelspin/lockup buildup,
+  induced tire scrub drag from lateral slip, speed-dependent cornering
+  stiffness reduction from wheel rotational speed,
   true force-at-corner rigid-body yaw integration from each tire's `r x F`
   moment plus front aligning moment, physical
   per-wheel angular velocity/inertia, wheelspin/lockup slip ratio, asymmetric
   combined-slip friction-ellipse limiting, brake bias, config-driven fixed-size
-  piecewise-linear engine torque curve, IMS-stacked geometric drivetrain
+  piecewise-linear engine torque curve with near-redline limiter margins,
+  rear clutch-pack limited-slip differential preload/ramp locking, low-drag
+  speedway aero, IMS-stacked geometric drivetrain
   gearing that drops 12,000 RPM shifts to roughly 9,500 RPM, automatic shift
   cooldown, smooth manual-mode RPM limiter bounce, RPM, automatic upshift
-  suppression when 1st/2nd-gear launch wheelspin spikes rear-wheel RPM, strict
+  suppression when 1st/2nd/3rd-gear launch wheelspin spikes rear-wheel RPM, strict
   manual mode when automatic transmission is disabled, and per-corner tire
   temperature evolution from sustained slip/usage with a Gaussian optimal
   thermal-grip window and cold/overheated grip loss
@@ -155,7 +160,8 @@ The current app can:
   braking CoP migration, undertray stall/bottoming reduction, asymmetric
   bottoming CoP shift, a small instant current-platform aero-load component,
   and forward CoP migration when the nose rides lower than the rear, alongside
-  speed-squared aerodynamic yaw damping for high-speed stability, and
+  modest speed-squared aerodynamic yaw damping that fades during rear-tire
+  breakaway, and
   switchable config-backed Speedway and Road Course aero presets that modify
   downforce, drag, base front aero balance, braking CoP shift, stall height, and
   stall reduction
@@ -174,7 +180,9 @@ The current app can:
   linear and yaw impulse response, then reset it near start/finish when
   requested
 - time laps using ordered checkpoints, invalidate off-asphalt laps, and record
-  the best valid completed lap as an in-memory translucent ghost car
+  the best valid completed lap as an in-memory translucent ghost car with
+  a compact 2048-sample, render-frame-gated pose buffer instead of
+  per-physics-step storage
 - show vehicle, performance, input, and raw SDL device diagnostics
 - draw lightweight HUD backing panels, darker worn racing surface, generated
   material texture detail, shader-integrated asphalt rubber/paint markings,
@@ -272,7 +280,8 @@ The current app can:
   full optical glass model.
 - The current tire model uses relaxation length for lateral slip, dynamic slip
   ratio for longitudinal force, load/speed-dependent relaxation length, a
-  compact Pacejka-lite peak/falloff curve, degressive load sensitivity, static
+  compact Pacejka-lite peak/falloff curve, speed-dependent cornering stiffness,
+  induced scrub drag, degressive load sensitivity, static
   setup camber thrust, friction-circle combined-slip limiting, front
   pneumatic/mechanical trail aligning moment, and a simple slip/usage-driven
   tire temperature/thermal-grip state. It still has no pressure, wear, carcass
@@ -291,7 +300,8 @@ The current app can:
 - Runtime menu adjustments are not persisted back to JSON yet; restart returns
   to the config file defaults.
 - The ghost car is an in-memory personal-best lap for the current run only; it
-  is not saved to disk between launches.
+  uses a compact 2048-sample render-frame-gated pose buffer for memory
+  efficiency and is not saved to disk between launches.
 - Audio is synthesized and intentionally lightweight. The engine layer now aims
   for a high-revving combustion Indycar character with pulse harmonics,
   mechanical noise, overdrive, turbo hiss, and off-throttle pops, but it is not
@@ -340,8 +350,8 @@ The current app can:
 5. `RaceSession` samples the current surface/banking and advances
    `Vehicle::step` zero or more times at the configured physics rate.
 6. The race session resolves the outer/inner barriers, applies extra grass
-   damping, advances checkpoint lap timing, and updates the in-memory ghost
-   recorder/playback state.
+   damping, advances checkpoint lap timing, and updates the render-frame-gated
+   2048-sample in-memory ghost recorder/playback state.
 7. `SoundManager` updates its synthesized engine, tire, and impact parameters
    from vehicle/input/race telemetry.
 8. `ForceFeedbackManager` computes and streams physics-derived normalized FFB
@@ -384,20 +394,23 @@ Physics behavior is not tied to the render frame rate.
   split lateral/longitudinal grip telemetry, race coordination, quintic
   banking-easement runouts, yaw-aware four-corner inner/outer wall containment,
   grass-trap rolling resistance and speed-sensitive speed bleed, checkpoint lap
-  timing, and in-memory ghost-lap recording/playback
+  timing, and compact render-frame-gated in-memory ghost-lap recording/playback
 - `src/physics`: config-driven sprung/unsprung vehicle state, four-corner
   spring/damper/ARB suspension loads, tire vertical stiffness,
   load/speed-dependent transient tire relaxation, Pacejka-lite tire forces with
-  peak/falloff behavior, degressive load-sensitive friction limits, static mirrored camber thrust, solver-owned
+  peak/falloff behavior, induced scrub drag, speed-dependent cornering stiffness,
+  degressive load-sensitive friction limits, static mirrored camber thrust, solver-owned
   front pneumatic/mechanical trail telemetry and yaw aligning moment,
   combined-slip tire forces with separate longitudinal/lateral friction limits,
   force-at-corner rigid-body tire torque integration, dynamic tire
   temperature/thermal-grip state, dynamic wheel angular
   velocity/slip ratio, banking, IMS speedway geometric gearing with shift
   cooldown, strict manual/automatic transmission modes, smooth manual-mode RPM
-  limiter bounce, drivetrain, brake, current-ride-height-sensitive ground-effect aero with
+  limiter bounce, rear clutch-pack limited-slip differential, drivetrain, brake,
+  current-ride-height-sensitive ground-effect aero with
   dynamic CoP migration and config-backed speedway/road-course package presets,
-  load-transfer, high-speed road-wheel-angle capping,
+  load-transfer, full-rack steering authority with input-side high-speed
+  keyboard response shaping,
   contact-offset wall impulse response, launch wheelspin-aware automatic
   upshift gating, and telemetry behavior
 - `src/render`: Metal renderer, compact ImageIO/CoreGraphics texture loading,
@@ -464,11 +477,14 @@ scheme for `LightweightSim` when the Xcode generator is available.
   Pacejka-lite tire curve shape, degressive tire load-sensitivity coefficients,
   speedway and road-course static camber setup values, tire pneumatic and
   mechanical trail values, load/speed-dependent tire relaxation length values,
+  speed-dependent tire stiffness-softening values,
   speedway and road-course aero preset packages,
-  ground-effect aero/CoP sensitivity, resistance parameters, and high-speed
-  steering cap values; the default high-speed steering scale is `0.22`, the
-  default 6th gear redlines at about 239 mph with the configured tire radius,
-  and each 12,000 RPM upshift drops to about 9,500 RPM
+  ground-effect aero/CoP sensitivity, resistance parameters, and input-side
+  high-speed keyboard steering response values; the default physical rack limit
+  is `18 deg`, the default high-speed keyboard steering scale is `0.45` at
+  `90 m/s`, the default rear differential uses `40 Nm` preload with ramp
+  locking, the default 6th gear redlines at about 239 mph with the configured
+  tire radius, and each 12,000 RPM upshift drops to about 9,500 RPM
 - `config/ffb_default.json`: SDL haptic enable flag and physics FFB gains for
   master strength, centering, damping, pneumatic/mechanical trail aligning
   torque, understeer lightening, grass vibration, collision jolts, and max force
@@ -567,8 +583,9 @@ config-tuning compliance pass:
   speedway/road-course aero package config and behavior regression checks,
   dynamic tire temperature/thermal-grip telemetry checks, a rigid-body steering/yaw
   regression check, manual shift-cooldown and manual limiter regression checks,
-  and a full-throttle launch regression check that prevents automatic shifting
-  past 2nd while the car is below the 2nd-gear launch threshold. `game_tests`
+  and full-throttle launch/top-gear pull regression checks that prevent
+  automatic wheelspin gear skipping while validating high-gear rear slip and
+  RPM behavior. `game_tests`
   verifies the inner wall
   sits beyond a grass runout, that inner/outer wall corner penetrations are
   caught before the vehicle center crosses the wall, and that grass keeps low
@@ -613,6 +630,20 @@ config-tuning compliance pass:
   `PHYS 0.038 ms`, `RENDER 22.41 ms`, and `PHYS_STEPS 358.4/s`. The fixed
   360 Hz physics loop remained stable and inexpensive; this run did not reach a
   stable 60 FPS render cadence on this machine.
+- final verification after the Pacejka stiffness, high-speed steering authority, and
+  3rd-gear wheelspin upshift-gate fixes rebuilt cleanly, passed `ctest`, and
+  benchmarked at `FPS 59.5`, `FRAME 16.80 ms`, `PHYS 0.039 ms`,
+  `RENDER 16.18 ms`, and `PHYS_STEPS 359.2/s`.
+- final verification after the steering/limit-handling realism pass rebuilt
+  cleanly, passed `ctest`, and benchmarked at `FPS 47.1`, `FRAME 21.24 ms`,
+  `PHYS 0.038 ms`, `RENDER 20.56 ms`, and `PHYS_STEPS 358.4/s`; physics
+  remained inexpensive while this run was render-bound.
+- final verification after the induced tire scrub drag, speed-dependent
+  cornering-stiffness softening, rear clutch-pack LSD, and render-frame-gated
+  ghost recorder pass rebuilt cleanly, passed `ctest`, and benchmarked at
+  `FPS 47.2`, `FRAME 21.19 ms`, `PHYS 0.037 ms`, `RENDER 20.36 ms`, and
+  `PHYS_STEPS 358.4/s`; physics remained inexpensive while this run was
+  render-bound.
 - the self-contained Release app was approximately 11 MB, under the current
   100 MB app/asset budget
 - the full asset folder was approximately 8.3 MB; generated OBJ meshes were

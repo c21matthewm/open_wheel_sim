@@ -1,0 +1,27 @@
+{
+  "diagnostics": {
+    "visible_on_start": true
+  },
+  "keyboard": {
+    "steer_rate": 3.2,
+    "return_rate": 5.2
+  },
+  "wheel": {
+    "enabled": true,
+    "name_contains": "G29",
+    "steer_axis": 0,
+    "throttle_axis": 2,
+    "brake_axis": 3,
+    "shift_up_button": 5,
+    "shift_down_button": 4,
+    "camera_button": 6,
+    "throttle_inverted": true,
+    "brake_inverted": true,
+    "steer_deadzone": 0.02,
+    "pedal_deadzone": 0.01,
+    "steer_gamma": 1.0,
+    "steer_sensitivity": 2.2,
+    "throttle_gamma": 1.0,
+    "brake_gamma": 1.0
+  }
+}

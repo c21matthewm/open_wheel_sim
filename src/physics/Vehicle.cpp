@@ -47,6 +47,48 @@ float smoothStep(float edge0, float edge1, float value) {
     return t * t * (3.0F - 2.0F * t);
 }
 
+float pacejkaPeakForceFraction(
+    float stiffnessFactor,
+    float shapeFactor,
+    float curvatureFactor) {
+    const float shaped =
+        stiffnessFactor -
+        curvatureFactor * (stiffnessFactor - std::atan(stiffnessFactor));
+    return std::clamp(std::sin(shapeFactor * std::atan(shaped)), 0.0F, 1.0F);
+}
+
+float pacejkaEffectiveStiffnessFactor(
+    float rawStiffnessFactor,
+    float shapeFactor,
+    float curvatureFactor,
+    float minStiffnessFactor,
+    float peakForceTarget,
+    float maxStiffnessFactor) {
+    const float safeMax = std::max(0.05F, maxStiffnessFactor);
+    const float safeMin = std::clamp(minStiffnessFactor, 0.05F, safeMax);
+    const float safeTarget = std::clamp(peakForceTarget, 0.80F, 0.9999F);
+    const float startingFactor = std::clamp(std::max(rawStiffnessFactor, safeMin), safeMin, safeMax);
+    float bestFactor = startingFactor;
+    float bestPeakFraction = pacejkaPeakForceFraction(startingFactor, shapeFactor, curvatureFactor);
+    if (rawStiffnessFactor >= safeMin && bestPeakFraction >= safeTarget) {
+        return startingFactor;
+    }
+
+    for (int sample = 1; sample <= 32; ++sample) {
+        const float candidate =
+            startingFactor + (safeMax - startingFactor) * static_cast<float>(sample) / 32.0F;
+        const float peakFraction = pacejkaPeakForceFraction(candidate, shapeFactor, curvatureFactor);
+        if (peakFraction > bestPeakFraction) {
+            bestPeakFraction = peakFraction;
+            bestFactor = candidate;
+        }
+        if (peakFraction >= safeTarget) {
+            return candidate;
+        }
+    }
+    return bestFactor;
+}
+
 float pacejkaLiteForce(
     float slip,
     float stiffness,
@@ -54,13 +96,19 @@ float pacejkaLiteForce(
     float peakSlip,
     float shapeFactor,
     float curvatureFactor,
-    float postPeakFalloff) {
+    float postPeakFalloff,
+    float peakCapableStiffnessFactor,
+    float maxStiffnessFactor) {
     const float safeLimit = std::max(1.0F, frictionLimit);
     const float safePeakSlip = std::max(0.001F, peakSlip);
     const float safeShape = std::max(0.20F, shapeFactor);
     const float normalizedSlip = slip / safePeakSlip;
-    const float stiffnessFactor =
-        std::clamp(stiffness * safePeakSlip / (safeShape * safeLimit), 0.05F, 9.0F);
+    const float rawStiffnessFactor =
+        stiffness * safePeakSlip / (safeShape * safeLimit);
+    const float stiffnessFactor = std::clamp(
+        std::max(rawStiffnessFactor, peakCapableStiffnessFactor),
+        0.05F,
+        std::max(0.05F, maxStiffnessFactor));
     const float shaped =
         stiffnessFactor * normalizedSlip -
         curvatureFactor * (stiffnessFactor * normalizedSlip - std::atan(stiffnessFactor * normalizedSlip));
@@ -78,7 +126,9 @@ float tireLateralForce(
     float peakSlipAngleRadians,
     float shapeFactor,
     float curvatureFactor,
-    float postPeakFalloff) {
+    float postPeakFalloff,
+    float peakCapableStiffnessFactor,
+    float maxStiffnessFactor) {
     return pacejkaLiteForce(
         -slipAngleRadians,
         corneringStiffness,
@@ -86,7 +136,9 @@ float tireLateralForce(
         peakSlipAngleRadians,
         shapeFactor,
         curvatureFactor,
-        postPeakFalloff);
+        postPeakFalloff,
+        peakCapableStiffnessFactor,
+        maxStiffnessFactor);
 }
 
 float tireLongitudinalForce(
@@ -96,7 +148,9 @@ float tireLongitudinalForce(
     float peakSlipRatio,
     float shapeFactor,
     float curvatureFactor,
-    float postPeakFalloff) {
+    float postPeakFalloff,
+    float peakCapableStiffnessFactor,
+    float maxStiffnessFactor) {
     return pacejkaLiteForce(
         slipRatio,
         longitudinalStiffness,
@@ -104,7 +158,9 @@ float tireLongitudinalForce(
         peakSlipRatio,
         shapeFactor,
         curvatureFactor,
-        postPeakFalloff);
+        postPeakFalloff,
+        peakCapableStiffnessFactor,
+        maxStiffnessFactor);
 }
 
 struct AxleForce {
@@ -321,6 +377,8 @@ WheelForce resolveWheelForce(
     float tireCurveShapeFactor,
     float tireCurveCurvatureFactor,
     float tirePostPeakFalloff,
+    float tirePacejkaPeakCapableStiffnessFactor,
+    float tirePacejkaMaxStiffnessFactor,
     float loadSensitivityCoeff,
     float loadSensitivityMinEfficiency) {
     const float cosSteer = std::cos(steerAngle);
@@ -348,9 +406,12 @@ WheelForce resolveWheelForce(
             lateralPeakSlipAngleRadians,
             tireCurveShapeFactor,
             tireCurveCurvatureFactor,
-            tirePostPeakFalloff) +
+            tirePostPeakFalloff,
+            tirePacejkaPeakCapableStiffnessFactor,
+            tirePacejkaMaxStiffnessFactor) +
         camberStiffnessNPerRad * camberAngleRadians *
             (normalLoadN / std::max(1.0F, referenceLoadN));
+    const float inducedDragDemand = -lateralDemand * std::sin(relaxedSlipAngleRadians);
     const float longitudinalDemand =
         tireLongitudinalForce(
             relaxedSlipRatio,
@@ -359,7 +420,10 @@ WheelForce resolveWheelForce(
             longitudinalPeakSlipRatio,
             tireCurveShapeFactor,
             tireCurveCurvatureFactor,
-            tirePostPeakFalloff);
+            tirePostPeakFalloff,
+            tirePacejkaPeakCapableStiffnessFactor,
+            tirePacejkaMaxStiffnessFactor) +
+        inducedDragDemand;
     const AxleForce localForce =
         resolveCombinedSlip(
             longitudinalDemand,
@@ -475,18 +539,8 @@ void Vehicle::step(
     const float longitudinalSpeed =
         dot(current_.velocityX, current_.velocityZ, forwardX, forwardZ);
     const float lateralSpeed = dot(current_.velocityX, current_.velocityZ, rightX, rightZ);
-    const float steeringSpeedFraction = std::clamp(
-        std::abs(longitudinalSpeed) / std::max(1.0F, config_.steerSpeedThresholdMps),
-        0.0F,
-        1.0F);
-    const float steeringScale =
-        1.0F + (config_.highSpeedSteerScale - 1.0F) * steeringSpeedFraction;
-    const float maxSteerLimit = config_.maxRoadWheelAngleRadians * steeringScale;
     const float steerAngle =
-        std::clamp(
-            std::clamp(input.steer, -1.0F, 1.0F) * config_.maxRoadWheelAngleRadians,
-            -maxSteerLimit,
-            maxSteerLimit);
+        std::clamp(input.steer, -1.0F, 1.0F) * config_.maxRoadWheelAngleRadians;
     const float throttle = clamp01(input.throttle);
     const float brakeInput = std::pow(clamp01(input.brake), config_.brakeGamma);
     const float absoluteLongitudinalSpeed = std::abs(longitudinalSpeed);
@@ -497,7 +551,10 @@ void Vehicle::step(
     const float gearRatio = gearRatioFor(currentGear_);
     const float limiterBlend =
         throttle > 0.05F
-            ? smoothStep(config_.redlineRpm - 420.0F, config_.redlineRpm - 45.0F, engineRpm)
+            ? smoothStep(
+                  config_.redlineRpm - config_.limiterStartMarginRpm,
+                  config_.redlineRpm - config_.limiterFullMarginRpm,
+                  engineRpm)
             : 0.0F;
     rpmLimiterPhase_ = std::fmod(
         rpmLimiterPhase_ + safeDt * (18.0F + limiterBlend * 18.0F),
@@ -850,15 +907,29 @@ void Vehicle::step(
         tireNormalLoad[kFrontLeft],
         tireNormalLoad[kFrontRight],
         config_.differentialLoadBias);
-    const SplitForce rearDriveSplit = splitByWheelLoad(
-        driveTorqueTotal * (1.0F - config_.driveFrontFraction),
-        tireNormalLoad[kRearLeft],
-        tireNormalLoad[kRearRight],
-        config_.differentialLoadBias);
+    const float rearDriveTorque = driveTorqueTotal * (1.0F - config_.driveFrontFraction);
     driveTorque[kFrontLeft] = frontDriveSplit.leftN;
     driveTorque[kFrontRight] = frontDriveSplit.rightN;
-    driveTorque[kRearLeft] = rearDriveSplit.leftN;
-    driveTorque[kRearRight] = rearDriveSplit.rightN;
+    if (config_.useLimitedSlipDifferential) {
+        const float baseRearTorque = rearDriveTorque * 0.5F;
+        const float wheelSpeedDiff = wheelOmega[kRearLeft] - wheelOmega[kRearRight];
+        const float lsdLockingTorque =
+            config_.lsdPreloadNm + config_.lsdRampFactor * std::abs(rearDriveTorque);
+        const float lsdTorque = std::clamp(
+            lsdLockingTorque * wheelSpeedDiff * config_.lsdSensitivity,
+            -lsdLockingTorque,
+            lsdLockingTorque);
+        driveTorque[kRearLeft] = baseRearTorque - lsdTorque * 0.5F;
+        driveTorque[kRearRight] = baseRearTorque + lsdTorque * 0.5F;
+    } else {
+        const SplitForce rearDriveSplit = splitByWheelLoad(
+            rearDriveTorque,
+            tireNormalLoad[kRearLeft],
+            tireNormalLoad[kRearRight],
+            config_.differentialLoadBias);
+        driveTorque[kRearLeft] = rearDriveSplit.leftN;
+        driveTorque[kRearRight] = rearDriveSplit.rightN;
+    }
 
     const SplitForce frontEngineBrakeSplit = splitByWheelLoad(
         engineBrakeTorqueTotal * config_.driveFrontFraction,
@@ -946,7 +1017,21 @@ void Vehicle::step(
 
     const float frontWheelStiffness = config_.frontCorneringStiffness * 0.5F;
     const float rearWheelStiffness = config_.rearCorneringStiffness * 0.5F;
+    const auto speedAdjustedCorneringStiffness = [&](float staticStiffness, std::size_t wheel) {
+        const float omegaNorm =
+            std::abs(wheelOmega[wheel]) / std::max(1.0F, config_.tireStiffnessSpeedReferenceRadPerSec);
+        const float stiffnessFactor =
+            1.0F / (1.0F + config_.tireStiffnessSpeedSoftening * omegaNorm * omegaNorm);
+        return staticStiffness * stiffnessFactor;
+    };
     const float tireLoadReferenceN = std::max(1.0F, config_.tireLoadReferenceNormalN);
+    const float pacejkaPeakCapableStiffnessFactor = pacejkaEffectiveStiffnessFactor(
+        0.0F,
+        config_.tireCurveShapeFactor,
+        config_.tireCurveCurvatureFactor,
+        config_.tirePacejkaMinStiffnessFactor,
+        config_.tirePacejkaPeakForceTarget,
+        config_.tirePacejkaMaxStiffnessFactor);
     const auto effectiveCamberForWheel = [&](std::size_t wheel) {
         const float setupCamber =
             corners[wheel].front ? config_.camberAngleFrontRadians : config_.camberAngleRearRadians;
@@ -962,7 +1047,7 @@ void Vehicle::step(
         true,
         config_.tirePneumaticTrailMaxM,
         config_.tireMechanicalTrailM,
-        frontWheelStiffness,
+        speedAdjustedCorneringStiffness(frontWheelStiffness, kFrontLeft),
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kFrontLeft],
         tireLoadReferenceN,
@@ -974,6 +1059,8 @@ void Vehicle::step(
         config_.tireCurveShapeFactor,
         config_.tireCurveCurvatureFactor,
         config_.tirePostPeakFalloff,
+        pacejkaPeakCapableStiffnessFactor,
+        config_.tirePacejkaMaxStiffnessFactor,
         config_.tireLoadSensitivityCoeff,
         config_.tireLoadSensitivityMinEfficiency);
     const WheelForce frontRight = resolveWheelForce(
@@ -985,7 +1072,7 @@ void Vehicle::step(
         true,
         config_.tirePneumaticTrailMaxM,
         config_.tireMechanicalTrailM,
-        frontWheelStiffness,
+        speedAdjustedCorneringStiffness(frontWheelStiffness, kFrontRight),
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kFrontRight],
         tireLoadReferenceN,
@@ -997,6 +1084,8 @@ void Vehicle::step(
         config_.tireCurveShapeFactor,
         config_.tireCurveCurvatureFactor,
         config_.tirePostPeakFalloff,
+        pacejkaPeakCapableStiffnessFactor,
+        config_.tirePacejkaMaxStiffnessFactor,
         config_.tireLoadSensitivityCoeff,
         config_.tireLoadSensitivityMinEfficiency);
     const WheelForce rearLeft = resolveWheelForce(
@@ -1008,7 +1097,7 @@ void Vehicle::step(
         false,
         config_.tirePneumaticTrailMaxM,
         config_.tireMechanicalTrailM,
-        rearWheelStiffness,
+        speedAdjustedCorneringStiffness(rearWheelStiffness, kRearLeft),
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearLeft],
         tireLoadReferenceN,
@@ -1020,6 +1109,8 @@ void Vehicle::step(
         config_.tireCurveShapeFactor,
         config_.tireCurveCurvatureFactor,
         config_.tirePostPeakFalloff,
+        pacejkaPeakCapableStiffnessFactor,
+        config_.tirePacejkaMaxStiffnessFactor,
         config_.tireLoadSensitivityCoeff,
         config_.tireLoadSensitivityMinEfficiency);
     const WheelForce rearRight = resolveWheelForce(
@@ -1031,7 +1122,7 @@ void Vehicle::step(
         false,
         config_.tirePneumaticTrailMaxM,
         config_.tireMechanicalTrailM,
-        rearWheelStiffness,
+        speedAdjustedCorneringStiffness(rearWheelStiffness, kRearRight),
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearRight],
         tireLoadReferenceN,
@@ -1043,6 +1134,8 @@ void Vehicle::step(
         config_.tireCurveShapeFactor,
         config_.tireCurveCurvatureFactor,
         config_.tirePostPeakFalloff,
+        pacejkaPeakCapableStiffnessFactor,
+        config_.tirePacejkaMaxStiffnessFactor,
         config_.tireLoadSensitivityCoeff,
         config_.tireLoadSensitivityMinEfficiency);
     const std::array<WheelForce, kWheelCount> wheelForces{{
@@ -1149,7 +1242,24 @@ void Vehicle::step(
     }
     const float yawDampingSpeedScale =
         speedSquared / square(std::max(1.0F, config_.aeroYawDampingReferenceSpeedMps));
-    yawMoment -= config_.aeroYawDampingNmPerRadS * yawDampingSpeedScale * current_.yawRate;
+    const float rearSlideSaturation = std::max({
+        wheelForces[kRearLeft].usage,
+        wheelForces[kRearRight].usage,
+        std::abs(wheelForces[kRearLeft].slipAngleRadians) /
+            std::max(0.001F, config_.lateralPeakSlipAngleRadians),
+        std::abs(wheelForces[kRearRight].slipAngleRadians) /
+            std::max(0.001F, config_.lateralPeakSlipAngleRadians),
+        std::abs(wheelForces[kRearLeft].longitudinalSlip) /
+            std::max(0.001F, config_.longitudinalPeakSlipRatio),
+        std::abs(wheelForces[kRearRight].longitudinalSlip) /
+            std::max(0.001F, config_.longitudinalPeakSlipRatio),
+    });
+    const float rearSlideFade =
+        smoothStep(1.0F, config_.aeroYawDampingRearSlideFullSaturation, rearSlideSaturation);
+    const float yawDampingSlideScale =
+        1.0F + (config_.aeroYawDampingRearSlideMinScale - 1.0F) * rearSlideFade;
+    yawMoment -=
+        config_.aeroYawDampingNmPerRadS * yawDampingSpeedScale * yawDampingSlideScale * current_.yawRate;
     current_.yawRate += yawMoment / std::max(1.0F, config_.yawInertiaKgM2) * safeDt;
     current_.yawRadians += current_.yawRate * safeDt;
     current_.positionX += current_.velocityX * safeDt;
@@ -1469,7 +1579,7 @@ void Vehicle::updateGear(float engineRpm, const InputActions& input) {
         const float rearPowerSlip =
             std::max(current_.rearLeftLongitudinalSlip, current_.rearRightLongitudinalSlip);
         const bool launchWheelspin =
-            currentGear_ <= 2 &&
+            currentGear_ <= 3 &&
             input.throttle > 0.25F &&
             rearPowerSlip > kAutoShiftWheelspinSlipThreshold;
         const bool allowAutomaticUpshift =

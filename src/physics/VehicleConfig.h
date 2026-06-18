@@ -31,22 +31,22 @@ struct VehicleConfig {
     float centerOfMassHeightM = 0.30F;
     float frontWeightFraction = 0.44F;
     float unsprungMassPerWheelKg = 16.5F;
-    float maxRoadWheelAngleRadians = 0.383972F;
-    float highSpeedSteerScale = 0.22F;
-    float steerSpeedThresholdMps = 75.0F;
+    float maxRoadWheelAngleRadians = 0.314159F;
+    float highSpeedSteerScale = 0.45F;
+    float steerSpeedThresholdMps = 90.0F;
     float frictionCoefficient = 1.60F;
-    float frontCorneringStiffness = 90000.0F;
-    float rearCorneringStiffness = 105000.0F;
+    float frontCorneringStiffness = 350000.0F;
+    float rearCorneringStiffness = 400000.0F;
     float lateralPeakSlipAngleRadians = 0.118682F;
     float longitudinalPeakSlipRatio = 0.105F;
     float tireCurveShapeFactor = 1.38F;
     float tireCurveCurvatureFactor = 0.72F;
-    float tirePostPeakFalloff = 0.18F;
+    float tirePostPeakFalloff = 0.20F;
     float lateralLoadTransferGripLoss = 0.18F;
     float tireLoadSensitivityCoeff = 0.10F;
     float tireLoadSensitivityMinEfficiency = 0.65F;
     float tireLoadReferenceNormalN = 1500.0F;
-    float tireCamberStiffnessNPerRad = 1000.0F;
+    float tireCamberStiffnessNPerRad = 15000.0F;
     float camberAngleFrontRadians = -0.052F;
     float camberAngleRearRadians = -0.017F;
     float speedwayCamberAngleFrontRadians = -0.052F;
@@ -58,7 +58,12 @@ struct VehicleConfig {
     float tireRelaxationLengthBaseM = 0.40F;
     float tireRelaxationLengthMinM = 0.15F;
     float tireRelaxationLengthMaxM = 0.90F;
-    float tireLongitudinalStiffness = 78000.0F;
+    float tireLongitudinalStiffness = 450000.0F;
+    float tireStiffnessSpeedSoftening = 0.08F;
+    float tireStiffnessSpeedReferenceRadPerSec = 80.0F;
+    float tirePacejkaMinStiffnessFactor = 3.0F;
+    float tirePacejkaPeakForceTarget = 0.995F;
+    float tirePacejkaMaxStiffnessFactor = 9.0F;
     float tireLongitudinalGripFraction = 0.93F;
     float tireThermalOptimalC = 95.0F;
     float tireThermalWindowC = 35.0F;
@@ -86,6 +91,10 @@ struct VehicleConfig {
     float drivetrainEfficiency = 0.93F;
     float driveFrontFraction = 0.0F;
     float differentialLoadBias = 0.35F;
+    bool useLimitedSlipDifferential = true;
+    float lsdPreloadNm = 40.0F;
+    float lsdRampFactor = 0.25F;
+    float lsdSensitivity = 0.04F;
     float wheelRadiusM = 0.343F;
     float wheelInertiaKgM2 = 1.25F;
     float finalDriveRatio = 3.65F;
@@ -94,19 +103,23 @@ struct VehicleConfig {
     float redlineRpm = 12000.0F;
     float shiftUpRpm = 11500.0F;
     float shiftDownRpm = 5500.0F;
+    float limiterStartMarginRpm = 160.0F;
+    float limiterFullMarginRpm = 20.0F;
     std::array<TorqueCurveKnot, 8> torqueCurveKnots{{
         {0.00F, 0.30F},
         {0.45F, 0.80F},
         {0.75F, 1.00F},
         {0.90F, 0.97F},
+        {0.97F, 0.95F},
+        {0.995F, 0.95F},
         {1.00F, 0.00F},
     }};
-    std::size_t torqueCurveKnotCount = 5;
+    std::size_t torqueCurveKnotCount = 7;
     bool automaticShift = true;
     float brakeForceN = 22000.0F;
     float brakeBias = 0.58F;
     float brakeGamma = 1.10F;
-    float aeroDragNPerMps2 = 0.55F;
+    float aeroDragNPerMps2 = 0.34F;
     float downforceNPerMps2 = 3.0F;
     float frontDownforceFraction = 0.37F;
     float aeroReferenceFrontRideHeightM = 0.048F;
@@ -120,11 +133,13 @@ struct VehicleConfig {
     float aeroBrakeCopShift = 0.020F;
     float aeroStallCopShift = 0.060F;
     float aeroInstantLoadFraction = 0.16F;
-    float aeroYawDampingNmPerRadS = 1200.0F;
+    float aeroYawDampingNmPerRadS = 400.0F;
     float aeroYawDampingReferenceSpeedMps = 60.0F;
+    float aeroYawDampingRearSlideMinScale = 0.20F;
+    float aeroYawDampingRearSlideFullSaturation = 1.45F;
     float minFrontDownforceFraction = 0.30F;
     float maxFrontDownforceFraction = 0.60F;
-    AeroPresetConfig speedwayAeroPreset{};
+    AeroPresetConfig speedwayAeroPreset{3.0F, 0.34F, 0.37F, 0.020F, 0.040F, 0.60F};
     AeroPresetConfig roadCourseAeroPreset{4.5F, 0.82F, 0.42F, 0.035F, 0.045F, 0.55F};
     float rollingResistanceN = 160.0F;
 

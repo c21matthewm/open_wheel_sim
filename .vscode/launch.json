@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Sim: Debug Native App",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/LightweightSim.app/Contents/MacOS/LightweightSim",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Sim: Build Debug"
+    }
+  ]
+}

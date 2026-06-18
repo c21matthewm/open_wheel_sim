@@ -5,10 +5,11 @@ app after editing; live reload is not implemented yet.
 
 ## Steering
 
-- `steering.max_road_wheel_angle_deg`: maximum physical front-wheel angle.
-- `steering.high_speed_steer_scale`: fraction of the maximum road-wheel angle
-  still available once the threshold speed is reached. The default `0.12`
-  keeps arrow-key steering from snapping the car into full lock at high speed.
+- `steering.max_road_wheel_angle_deg`: maximum physical front-wheel angle. The
+  default `18.0` is the full rack limit and remains available at every speed.
+- `steering.high_speed_steer_scale`: input-side keyboard response scale once
+  the threshold speed is reached. It slows how quickly keyboard steering moves
+  toward full lock, but it does not clamp the physical rack angle.
 - `steering.steer_speed_threshold_mps`: speed where the high-speed steering
   scale is fully applied.
 - `keyboard.steer_rate`: how quickly keyboard steering reaches full input.
@@ -23,6 +24,14 @@ current run. These runtime changes are not written back to JSON yet.
 - `tires.friction_coefficient`: peak axle-force multiplier.
 - `tires.front_cornering_stiffness_n_per_rad`: front response to slip angle.
 - `tires.rear_cornering_stiffness_n_per_rad`: rear response to slip angle.
+- `tires.longitudinal_stiffness_n`: drive/brake response to slip ratio.
+- `tires.camber_stiffness_n_per_rad`: camber-thrust contribution before the
+  combined-slip limiter.
+- `tires.stiffness_speed_softening`: high-speed cornering-stiffness reduction
+  from tire carcass growth. Higher values make the car lazier at very high
+  wheel speeds.
+- `tires.stiffness_speed_ref_rps`: wheel angular speed where the softening
+  coefficient reaches its reference effect.
 - `tires.lateral_peak_slip_angle_deg`: approximate lateral slip angle where
   the Pacejka-lite curve reaches peak grip.
 - `tires.longitudinal_peak_slip_ratio`: approximate drive/brake slip ratio
@@ -33,6 +42,13 @@ current run. These runtime changes are not written back to JSON yet.
   more lateral authority.
 - `tires.curve_shape_factor`, `curve_curvature_factor`, `post_peak_falloff`:
   compact tire-curve shape controls for peak sharpness and post-peak falloff.
+  Higher `post_peak_falloff` makes over-driving past peak slip shed lateral
+  force more aggressively, so spin-outs come from the tire model instead of
+  steering clamps.
+- `tires.pacejka_min_stiffness_factor`, `pacejka_peak_force_target`, and
+  `pacejka_max_stiffness_factor`: safety guard for under-stiff tire configs.
+  If stiffness is too low for the curve to approach the friction limit near
+  peak slip, the internal Pacejka factor is boosted up to the configured max.
 - `tires.thermal_optimal_c`: tire temperature where thermal grip peaks.
 - `tires.thermal_window_c`: Gaussian grip-window width around the optimal
   temperature. Narrower values make warm-up and overheating more punishing.
@@ -77,14 +93,24 @@ to available rear grip can make the car less forgiving.
   configured wheel radius and keeps 4th-6th tightly spaced.
 - `powertrain.idle_rpm`, `redline_rpm`, `shift_up_rpm`, `shift_down_rpm`:
   drivetrain telemetry and automatic shift points.
+- `powertrain.limiter_start_margin_rpm` and `limiter_full_margin_rpm`: how
+  close to redline the RPM limiter starts and reaches full cut. The defaults
+  keep top-gear speedway pulls from losing power before the shift/redline zone.
 - `powertrain.automatic_transmission`: keeps keyboard driving usable without a
   shifter when enabled. When disabled, paddles/keyboard shift inputs are the
   only way to change gear.
+- `powertrain.lsd_preload_nm`: rear limited-slip differential preload that
+  resists left/right rear wheel-speed difference even at low throttle.
+- `powertrain.lsd_ramp_factor`: additional LSD locking torque as rear drive
+  torque rises.
+- `powertrain.lsd_sensitivity`: maps rear wheel-speed difference into locking
+  torque before clamping to the available preload/ramp lock.
 - `brakes.max_brake_force_n`: total brake force demand before tire limiting.
 - `brakes.brake_bias`: front brake share. Higher values make braking more
   front-biased.
 - `brakes.brake_gamma`: nonlinear brake input response.
-- `aero.drag_n_per_mps2`: quadratic speed resistance.
+- `aero.drag_n_per_mps2`: quadratic speed resistance. The speedway default is
+  a low-drag oval value tuned with the IMS gear stack for a 235-240 mph pull.
 - `aero.downforce_n_per_mps2`: quadratic vertical load added with speed.
 - `aero.front_downforce_fraction`: front share of aero load.
 - `aero.ride_height_balance_sensitivity`: CoP shift from front/rear tunnel
@@ -95,9 +121,13 @@ to available rear grip can make the car less forgiving.
   directly to tire normal loads for sharper high-speed aero response.
 - `aero.yaw_damping_nm_per_rad_s`: speed-squared yaw damping coefficient.
   Higher values make the car settle yaw perturbations more strongly at
-  speedway speeds.
+  speedway speeds; the current baseline is deliberately low enough that it
+  does not mask tire breakaway.
 - `aero.yaw_damping_reference_speed_mps`: speed where the yaw damping
   coefficient is applied at full scalar strength before the `speed^2` scale.
+- `aero.yaw_damping_rear_slide_min_scale` and
+  `aero.yaw_damping_rear_slide_full_saturation`: fade yaw damping during rear
+  tire over-limit slides so excess steering/throttle can produce organic spins.
 - `resistance.rolling_resistance_n`: constant rolling resistance while moving.
 
 Throttle, brake, and lateral tire forces now share each wheel's friction budget.

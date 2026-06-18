@@ -28,6 +28,26 @@ friction_limit = tire_friction_coefficient * surface_grip * normal_load * load_e
 stiffness and peak slip, `C` is `tires.curve_shape_factor`, and `E` is
 `tires.curve_curvature_factor`. `tires.post_peak_falloff` trims force after
 the peak so the edge of grip is progressive instead of an abrupt clamp.
+The solver also computes a config-backed minimum effective `B` factor from
+`tires.pacejka_min_stiffness_factor`, `tires.pacejka_peak_force_target`, and
+`tires.pacejka_max_stiffness_factor`. If a tire stiffness value is too low to
+let the Pacejka-lite curve approach its friction limit near the configured peak
+slip, the internal curve factor is boosted for that step instead of silently
+flattening the tire. The default IR-18 tire rates are high enough for this to
+act as a safety guard rather than normal tuning.
+
+Cornering stiffness is softened by wheel rotational speed before the
+Pacejka-lite curve is evaluated:
+
+```text
+omega_norm = abs(wheel_angular_velocity) / tires.stiffness_speed_ref_rps
+stiffness_factor = 1 / (1 + tires.stiffness_speed_softening * omega_norm^2)
+effective_cornering_stiffness = static_cornering_stiffness * stiffness_factor
+```
+
+This approximates high-speed carcass growth and contact-patch softening without
+adding tire state. At low speed the multiplier is effectively one; at speedway
+wheel speeds the response is subtly softer.
 
 Longitudinal drive and brake demand then share the same wheel grip budget
 through a combined-slip friction ellipse. Lateral grip uses the full tire
@@ -46,6 +66,18 @@ The combined-slip resolver keeps longitudinal and lateral demand separate when
 returning scaled forces. This is important for high-speed coasting stability:
 off-throttle wheels can still generate lateral force instead of accidentally
 collapsing lateral grip to the longitudinal demand.
+
+Lateral slip also produces induced scrub drag before the combined-slip ellipse
+is resolved:
+
+```text
+induced_drag = -lateral_demand * sin(relaxed_slip_angle)
+longitudinal_demand += induced_drag
+```
+
+The drag therefore competes for the same tire friction budget instead of being
+an extra force. Sliding through a corner now bleeds vehicle speed and makes
+overdriven understeer cost lap time.
 
 Tire temperature maps to grip through a Gaussian peak window:
 
@@ -115,15 +147,16 @@ force more gradually while preserving faster response where load and speed are
 lower. The live per-wheel relaxation lengths are exposed in telemetry.
 
 The front wheel forces are rotated by steering angle before forces and yaw
-moments are integrated. Keyboard steering also has two stability assists:
-`InputManager` slows keyboard steering rate as vehicle speed rises, and
-`Vehicle::step` scales the maximum road-wheel angle down toward
-`steering.high_speed_steer_scale` at `steering.steer_speed_threshold_mps`.
-Wheel devices still pass through the calibrated input path, but the final
-front-wheel angle is constrained by the same high-speed physics clamp. The
-default car is rear-drive, with optional front-drive fraction kept as a tuning
-parameter for experimentation. Braking force is split by brake bias and then
-per wheel.
+moments are integrated. `Vehicle::step` maps normalized steering input directly
+to the configured physical rack limit, so full input always reaches
+`steering.max_road_wheel_angle_deg` even at speed. Keyboard steering remains
+speed-aware in `InputManager`: `steering.high_speed_steer_scale` and
+`steering.steer_speed_threshold_mps` slow how quickly keyboard input reaches
+full lock, but they no longer reduce the final road-wheel angle. Wheel devices
+still pass through the calibrated input path and then into the same full-rack
+physics mapping. The default car is rear-drive, with optional front-drive
+fraction kept as a tuning parameter for experimentation. Braking force is split
+by brake bias and then per wheel.
 
 ## Drivetrain And Brakes
 
@@ -136,7 +169,8 @@ config-driven drivetrain:
 - six scalar gear ratios
 - drivetrain efficiency
 - front/rear drive split
-- simple load-biased differential split
+- rear clutch-pack limited-slip differential with preload and ramp locking
+  torque, plus a load-biased fallback for older configs
 - idle, redline, shift-up, and shift-down RPM
 - optional automatic shifting
 
@@ -153,13 +187,33 @@ engine_torque = powertrain.engine_torque_nm * torque_multiplier
 It is not an engine dyno simulation, but it gives gearing and RPM real meaning
 without heap allocation or per-step table parsing.
 
-The default speedway gearing is stacked for Indianapolis: 6th gear redlines at
-about 239 mph with the configured 0.343 m tire radius, while 4th-6th are close
-enough to keep the engine near 12,000 rpm during speedway running and drafting.
+The default speedway gearing and low-drag aero package are stacked for
+Indianapolis: 6th gear redlines at about 239 mph with the configured 0.343 m
+tire radius, while 4th-6th are close enough to keep the engine near 12,000 rpm
+during speedway running and drafting. The limiter starts close to redline via
+configurable RPM margins so it does not bleed top-gear power hundreds of RPM
+early.
 
 Brake input is gamma-shaped, split by `brakes.brake_bias`, and constrained by
 the same tire friction budget as steering and throttle. Heavy brake while
 turning can therefore consume front grip and reduce steering response.
+
+The default rear-drive torque split uses a compact clutch-pack LSD:
+
+```text
+wheel_speed_diff = rear_left_omega - rear_right_omega
+locking_torque = powertrain.lsd_preload_nm
+                 + powertrain.lsd_ramp_factor * abs(rear_drive_torque)
+lsd_torque = clamp(locking_torque * wheel_speed_diff * powertrain.lsd_sensitivity,
+                   -locking_torque,
+                    locking_torque)
+rear_left_torque  = rear_drive_torque * 0.5 - lsd_torque * 0.5
+rear_right_torque = rear_drive_torque * 0.5 + lsd_torque * 0.5
+```
+
+The preload term acts even with little or no throttle, while the ramp term adds
+lock under power. Legacy configs without any LSD keys retain the old
+`powertrain.differential_load_bias` rear split.
 
 ## Weight Transfer And Aero
 
@@ -231,7 +285,12 @@ yaw_moment -= yaw_damping
 
 At parking-lot speeds this term is effectively absent. At speedway speeds it
 helps the car resist and settle small yaw perturbations without changing the
-360 Hz fixed-step model or adding state.
+360 Hz fixed-step model or adding state. The configured baseline is intentionally
+modest, and the damping is faded toward
+`aero.yaw_damping_rear_slide_min_scale` when the rear tires exceed the lateral
+or longitudinal peak-slip window. Rear breakaway is therefore governed by the
+tire curve, combined-slip budget, and rigid-body moments rather than by an aero
+damping clamp that catches the slide.
 
 The active aero package is selected by `Vehicle::setAeroPreset`. The configured
 `aero_presets.speedway` and `aero_presets.road_course` packages independently

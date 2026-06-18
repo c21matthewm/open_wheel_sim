@@ -1,0 +1,564 @@
+Simple Arcade Race Sim Prompt Initial Instructions
+
+
+You are building a lightweight native macOS sim-racing prototype focused on low latency, small build size, Logitech G29 wheel/pedal support, believable open-wheel vehicle physics, tunable force feedback where macOS allows it, and fast performance on a Mac connected to a TV.
+Project name: Lightweight Open-Wheel Sim Prototype
+Primary target:
+* macOS desktop application.
+* Runs locally on the Mac, not in a browser.
+* Displayed on a TV or monitor over HDMI, USB-C-to-HDMI, or DisplayPort-to-HDMI.
+* Target render resolutions:
+    * 854x480
+    * 960x540
+    * 1280x720
+* Must support fullscreen and borderless windowed mode.
+* Target frame rate: stable 60 FPS minimum.
+* Target physics rate: 120 Hz preferred, 240 Hz only if stable.
+* Target input latency: as low and consistent as possible.
+* Prioritize deterministic physics, clean architecture, small assets, and no unnecessary engine bloat.
+* Do not use Unity, Unreal, or Godot for the first version.
+Important macOS-specific constraint:The Logitech Steering Wheel SDK used on Windows should not be treated as available on macOS. On macOS, wheel input and force feedback must be implemented through a platform abstraction. Use SDL3 joystick APIs and/or Apple Game Controller framework for device input. Investigate SDL3 haptic support, Apple controller haptics, IOKit HID, or other macOS-compatible paths for force feedback, but do not assume Windows DirectInput or Logitech’s Windows SDK exists on macOS.
+Preferred stack:
+* Language: C++20 or C++23.
+* Compiler: Apple Clang via Xcode Command Line Tools.
+* Build system: CMake.
+* IDE/editor compatibility:
+    * Xcode
+    * VS Code
+    * Cursor
+    * CLion if available
+* Window/input/audio layer:
+    * SDL3 for windowing, keyboard, mouse, joystick, gamepad, timing, and audio.
+* Rendering:
+    * Prefer Metal as the primary renderer.
+    * Acceptable approaches:
+        * Native Metal renderer using Objective-C++ bridge files where needed.
+        * SDL3 window + Metal layer.
+        * SDL3 GPU API if stable and practical for the project.
+    * Avoid relying on OpenGL as the primary renderer because OpenGL is deprecated on macOS.
+* UI/debug overlay:
+    * Dear ImGui if it integrates cleanly with Metal/SDL3.
+    * Otherwise, implement a minimal custom debug overlay.
+* Config format:
+    * JSON, TOML, or INI.
+    * Prefer TOML or JSON for readability.
+* Asset formats:
+    * glTF or OBJ for simple meshes.
+    * PNG or WebP for small textures.
+    * WAV or OGG for audio.
+    * Keep all assets small, replaceable, and unlicensed.
+* Version control:
+    * Git.
+    * GitHub or GitLab.
+    * Use Git LFS only if asset files become large.
+Core goal:Create a playable single-car, single-track racing prototype with believable open-wheel/simcade physics and tunable steering, braking, grip, and force-feedback behavior. The prototype should be simple in content but not crude in feel.
+The game should feel closer to a lightweight Indy-style open-wheel sim than an arcade racer, but the scope should stay small enough for one developer or a coding agent to build iteratively.
+Initial game scope:
+1. One lightweight open-wheel style car.
+2. One simple oval test track:
+    * Start with an oval inspired by the Indianapolis Motor Speedway.
+    * Approximate 2.5-mile lap distance.
+    * Approximate 9 degrees 12 minutes of banking in the corners.
+    * Do not use copyrighted or trademarked names in the game title, UI, track title, assets, or documentation.
+    * Internally refer to it as “Large Flat-Speedway Oval” or “2.5-Mile Test Oval.”
+    * Include road surface, grass/off-track surface, walls/barriers, lap timing checkpoints, and start/finish line.
+3. Game modes:
+    * Free drive.
+    * Time trial with lap timing.
+4. Inputs:
+    * Logitech G29 steering wheel.
+    * Logitech G29 throttle pedal.
+    * Logitech G29 brake pedal.
+    * Logitech G29 paddle shifters.
+    * Keyboard fallback.
+    * Gamepad fallback if practical.
+5. Force feedback:
+    * Architect the game so force feedback is supported through an abstraction layer.
+    * On macOS, do not assume force feedback will work immediately.
+    * Implement FFB in stages:
+        * Stage A: no FFB, input only.
+        * Stage B: SDL3 haptic/rumble test if detected.
+        * Stage C: constant spring/centering force if supported.
+        * Stage D: physics-derived force feedback if a working macOS path is confirmed.
+    * Desired FFB effects:
+        * Centering/self-aligning torque.
+        * Understeer lightening.
+        * Oversteer/slip signal.
+        * Curb vibration.
+        * Wall/collision jolt.
+        * Optional road texture vibration.
+6. Physics:
+    * Use a fixed timestep physics loop.
+    * Decouple rendering from physics.
+    * Start with a robust 4-wheel rigid-body car model if feasible.
+    * The physics should resemble open-wheel oval racing behavior as much as practical.
+    * If a full 4-wheel model is too slow to implement initially, start with a high-quality dynamic bicycle model but design the architecture so it can later be upgraded to 4-wheel physics.
+    * Include tire slip angle, longitudinal slip, lateral grip curve, longitudinal grip curve, weight transfer, aerodynamic drag, optional downforce, brake bias, basic differential behavior, and surface grip multipliers.
+7. Tuning:
+    * All car parameters must be editable from config files, not hardcoded.
+    * Include live reload for tuning if feasible.
+    * Include debug readouts for:
+        * speed
+        * gear
+        * RPM
+        * steering input
+        * mapped front wheel steering angle
+        * throttle
+        * brake
+        * tire slip angles
+        * longitudinal slip
+        * lateral G
+        * longitudinal G
+        * downforce
+        * brake bias
+        * FFB output if available
+        * frame time
+        * physics update time
+Performance requirements:
+* Run locally as a compiled native macOS app.
+* Use a fixed physics timestep, preferably 120 Hz.
+* Render at stable 60 FPS minimum.
+* Support 480p, 540p, and 720p rendering.
+* Avoid per-frame heap allocations in:
+    * physics loop
+    * input loop
+    * rendering loop
+    * force-feedback loop
+    * telemetry loop
+* Avoid large textures and high-poly meshes.
+* Use simple lighting first.
+* Implement frame-time logging.
+* Include a performance overlay showing:
+    * FPS
+    * frame time
+    * physics update time
+    * render time
+    * input polling time
+    * FFB update time, if enabled
+    * memory usage estimate if practical
+* Prefer procedural or very small placeholder assets during early development.
+* Compress final assets.
+* Keep the final .app bundle and asset folder small.
+* Avoid unnecessary dependencies.
+macOS build requirements:
+* Use CMake.
+* Support command-line build with:
+    * cmake -S . -B build
+    * cmake --build build --config Release
+* Support Xcode project generation if practical:
+    * cmake -S . -B build-xcode -G Xcode
+* Build output should produce either:
+    * a command-line runnable app during early development, and
+    * a proper .app bundle for release.
+* Use macOS .app packaging for distribution.
+* Release package should be a .zip or .dmg containing:
+    * LightweightSim.app
+    * config/
+    * assets/
+    * README.txt
+* Use ad-hoc signing for local testing if required.
+* Do not require App Store distribution.
+Architecture requirements:Create a clean modular project structure similar to:
+/CMakeLists.txt/README.md/src/main.cpp/appApp.cpp / App.hGameLoop.cpp / GameLoop.h/platformWindowSDL.cpp / WindowSDL.hMacOSPlatform.mm / MacOSPlatform.hFileSystem.cpp / FileSystem.hTime.cpp / Time.h/inputInputManager.cpp / InputManager.hKeyboardInput.cpp / KeyboardInput.hSDLJoystickInput.cpp / SDLJoystickInput.hMacGameControllerInput.mm / MacGameControllerInput.hWheelDevice.cpp / WheelDevice.hInputCalibration.cpp / InputCalibration.h/ffbForceFeedbackManager.cpp / ForceFeedbackManager.hFFBDevice.cpp / FFBDevice.hSDLHapticForceFeedback.cpp / SDLHapticForceFeedback.hMacForceFeedback.mm / MacForceFeedback.hFFBEffects.cpp / FFBEffects.h/physicsPhysicsWorld.cpp / PhysicsWorld.hVehicle.cpp / Vehicle.hVehicleConfig.cpp / VehicleConfig.hTireModel.cpp / TireModel.hSuspension.cpp / Suspension.hAero.cpp / Aero.hTrackSurface.cpp / TrackSurface.hRigidBody.cpp / RigidBody.h/renderRenderer.cpp / Renderer.hMetalRenderer.mm / MetalRenderer.hMesh.cpp / Mesh.hCamera.cpp / Camera.hMaterial.cpp / Material.hShaderLibrary.mm / ShaderLibrary.h/gameRaceSession.cpp / RaceSession.hLapTimer.cpp / LapTimer.hTrack.cpp / Track.hTrackGenerator.cpp / TrackGenerator.hCarController.cpp / CarController.h/uiDebugOverlay.cpp / DebugOverlay.hTuningOverlay.cpp / TuningOverlay.h/configvehicle_openwheel_default.jsoninput_default.jsongraphics_default.jsonffb_default.jsontrack_oval_default.json/assets/meshes/textures/audio/tracks/docssetup_macos.mdtuning.mdffb_macos.mdphysics.mdpackaging_macos.md
+Implementation priorities:
+Milestone 1: Bootable macOS app
+* Create SDL3 window.
+* Create Metal-backed renderer or simple SDL-compatible Metal rendering path.
+* Render simple ground plane.
+* Run fixed timestep loop.
+* Add FPS/frame-time overlay.
+* Add keyboard input.
+* Add chase camera.
+* Add config file loading.
+* Add basic app settings:
+    * resolution
+    * fullscreen
+    * borderless
+    * vsync on/off
+    * render scale
+Milestone 2: Basic car movement
+* Add simple placeholder car body.
+* Implement initial physics model.
+* Throttle, brake, steering.
+* Camera follows car.
+* Vehicle config loaded from file.
+* Add reset-to-track key.
+* Add speed/RPM/gear display.
+Milestone 3: macOS G29 input
+* Detect connected input devices through SDL3 joystick APIs.
+* Detect racing-wheel-like devices by name, axis count, and button count.
+* Add specific mapping profile for Logitech G29 if detected.
+* Add Apple Game Controller framework investigation path for racing wheels.
+* Read:
+    * steering axis
+    * throttle pedal
+    * brake pedal
+    * clutch if present
+    * paddle shifters
+    * wheel buttons if available
+* Add calibration screen or config:
+    * steering min/max/center
+    * pedal min/max
+    * invert pedal axes
+    * dead zones
+    * steering lock
+    * steering ratio
+    * brake gamma/sensitivity
+    * throttle gamma/sensitivity
+* Add keyboard fallback:
+    * WASD or arrow keys
+    * Space or S for brake
+    * R to reset car
+    * F11 or Command+F to toggle fullscreen
+    * Escape opens menu/exits
+Milestone 4: Track and lap timing
+* Add simple 2.5-mile oval inspired by Indianapolis-style proportions.
+* Use procedural generation first to keep file size small.
+* Include:
+    * road mesh
+    * corner banking
+    * apron or inner boundary if practical
+    * grass/off-track surface
+    * outside wall
+    * inside boundary
+    * start/finish line
+    * timing checkpoints
+* Add lap timing.
+* Add invalid-lap detection for shortcuts/off-track.
+* Add surface grip zones:
+    * asphalt
+    * apron
+    * grass
+    * wall/contact
+Milestone 5: Improved physics
+* Add tire slip model.
+* Add lateral force curve.
+* Add longitudinal force curve.
+* Add combined grip behavior.
+* Add weight transfer.
+* Add surface grip multipliers.
+* Add brake bias.
+* Add simple gear/RPM/engine torque model.
+* Add drag.
+* Add downforce.
+* Add telemetry overlay.
+* Add config-driven tuning for:
+    * mass
+    * wheelbase
+    * track width
+    * center of mass height
+    * tire grip
+    * tire stiffness
+    * brake torque
+    * brake bias
+    * engine torque
+    * gear ratios
+    * final drive
+    * aero drag
+    * downforce
+    * steering ratio
+    * steering lock
+Milestone 6: macOS force-feedback investigation and implementation
+* Implement ForceFeedbackManager as an abstraction so the game does not depend on any one API.
+* Implement a no-op FFB backend first.
+* Implement SDL3 haptic backend:
+    * enumerate haptic devices
+    * attempt to open haptic from joystick
+    * report supported effects
+    * run simple test effects if supported
+* Implement macOS-specific backend only if practical:
+    * investigate Apple Game Controller haptics
+    * investigate IOKit HID access
+    * investigate whether the G29 exposes force-feedback capabilities to macOS
+* Add an in-game FFB test menu:
+    * device detected
+    * haptic supported yes/no
+    * supported effect types
+    * test centering
+    * test constant force
+    * test sine vibration
+    * test collision jolt
+* Desired FFB components:
+    * self_aligning_torque
+    * centering_spring
+    * slip_feedback
+    * curb_vibration
+    * collision_impulse
+    * road_noise
+* Add a force limiter to prevent clipping.
+* Add smoothing to avoid oscillation.
+* Add user config:
+    * master_ffb_strength
+    * centering_strength
+    * road_effect_strength
+    * curb_strength
+    * collision_strength
+    * understeer_effect_strength
+    * damping
+    * minimum_force
+    * max_force
+* If true wheel force feedback cannot be made to work reliably on macOS, document that clearly and leave the FFB backend modular so a future Windows/Linux backend can be added.
+Milestone 7: Visual polish without bloat
+* Add simple low-poly open-wheel car mesh.
+* Add simple oval track mesh or procedural mesh.
+* Add low-resolution textures.
+* Add simple sky color or very small skybox if cheap.
+* Add basic engine sound.
+* Add tire scrub sound.
+* Add collision sound.
+* Add resolution options:
+    * 480p
+    * 540p
+    * 720p
+* Add fullscreen/borderless window mode.
+* Add camera modes:
+    * chase camera
+    * hood/nose camera if easy
+    * cockpit-style camera if easy
+* Add simple shadows only if performance allows.
+* Use distance culling if needed.
+Milestone 8: macOS packaging
+* Create Release build.
+* Produce LightweightSim.app.
+* Copy required assets/configs into the app bundle or adjacent release folder.
+* Include README instructions.
+* Include config files.
+* Include sample G29 setup instructions.
+* Include troubleshooting for:
+    * wheel not detected
+    * pedals inverted
+    * no force feedback
+    * app blocked by macOS Gatekeeper
+    * fullscreen on external display
+* Add GitHub Actions macOS build only if practical.
+* Release package should be:
+    * LightweightSim-macOS.zip
+    * or LightweightSim.dmg
+Physics model requirements:
+* Avoid fake arcade movement where the car simply rotates toward steering input.
+* The car should have momentum, braking instability, understeer, oversteer, and recoverable slides.
+* Use units consistently:
+    * meters
+    * seconds
+    * kilograms
+    * Newtons
+    * radians internally for angles where appropriate
+* Use a fixed physics timestep.
+* Include clear comments explaining:
+    * tire lateral force calculation
+    * tire longitudinal force calculation
+    * combined slip
+    * weight transfer
+    * steering angle mapping
+    * brake force
+    * engine torque
+    * aerodynamic drag
+    * downforce
+    * force feedback derivation
+* Keep physics deterministic where practical.
+* Do not tie physics behavior to render frame rate.
+* Add telemetry logging to CSV if easy.
+Vehicle feel requirements:
+* Steering should be physically meaningful.
+* Wheel degrees should map to front wheel steering angle.
+* Include steering lock config.
+* Include steering ratio config.
+* Pedals should support calibration and inversion.
+* Brake should allow nonlinear response curve.
+* Throttle should allow nonlinear response curve.
+* The car should be stable enough to drive laps but capable of:
+    * understeer on excessive corner entry speed
+    * oversteer on excessive throttle or aggressive steering
+    * brake lockup or instability if configured
+    * wall contact and recovery
+    * surface grip changes when leaving the racing surface
+Input behavior:
+* Create an input abstraction with semantic actions:
+    * steer
+    * throttle
+    * brake
+    * clutch
+    * shift_up
+    * shift_down
+    * reset_car
+    * camera_change
+    * pause
+    * toggle_fullscreen
+* Raw device axes should never directly control physics without calibration.
+* Add input smoothing only where needed.
+* Do not add excessive smoothing that increases latency.
+* Save user calibration to config.
+Rendering requirements:
+* Start simple.
+* Do not overbuild graphics.
+* Use low-poly meshes.
+* Use small textures.
+* Prefer stable frame time over visual effects.
+* Use Metal as the main rendering target.
+* Add chase camera first.
+* Add hood/nose camera if easy.
+* Add basic shadows only if performance allows.
+* Use distance culling if needed.
+* Keep shaders simple.
+* Avoid large post-processing effects.
+* Add render-scale option so the game can render internally at 480p/540p/720p and scale to the TV.
+Audio requirements:
+* Use SDL3 audio or another lightweight cross-platform audio layer.
+* Add simple engine loop.
+* Add tire scrub sound driven by slip.
+* Add collision/wall contact sound.
+* Keep audio files small.
+* Do not let audio processing affect physics timing.
+Documentation requirements:Create:
+1. README.md:
+    * What the project is.
+    * Current feature status.
+    * How to install dependencies.
+    * How to build on macOS.
+    * How to run.
+    * How to connect the G29.
+    * How to calibrate controls.
+    * How to troubleshoot wheel detection.
+    * Current force-feedback limitations on macOS.
+2. docs/setup_macos.md:
+    * Install Xcode Command Line Tools.
+    * Install Homebrew if needed.
+    * Install CMake.
+    * Install SDL3.
+    * Generate build files.
+    * Build Debug.
+    * Build Release.
+    * Run from terminal.
+    * Run from Finder as .app.
+3. docs/tuning.md:
+    * Explanation of vehicle config.
+    * How to tune grip.
+    * How to tune brake balance.
+    * How to tune steering.
+    * How to tune aero.
+    * How to tune FFB if available.
+4. docs/physics.md:
+    * Explanation of the physics model used.
+    * Units.
+    * Tire model.
+    * Weight transfer.
+    * Aero model.
+    * Known simplifications.
+5. docs/ffb_macos.md:
+    * Explanation of force-feedback architecture.
+    * What APIs were tested.
+    * Whether the G29 exposes haptics/FFB on macOS.
+    * Supported effects.
+    * Unsupported effects.
+    * Future backend plan.
+6. docs/packaging_macos.md:
+    * How to create the .app bundle.
+    * How to package a .zip or .dmg.
+    * How to handle local code signing.
+    * How to launch on an external TV.
+Definition of done for first playable macOS version:
+* Launches as a native macOS app.
+* Opens fullscreen or borderless on a TV/monitor.
+* Runs a simple oval track at stable 60 FPS.
+* Car can complete timed laps.
+* Logitech G29 steering, throttle, brake, and paddles work through the macOS input layer.
+* Keyboard fallback works.
+* Vehicle config can be edited without recompiling.
+* Telemetry/debug overlay works.
+* Build instructions are clear enough for a non-expert to follow.
+* Release package is a .zip or .dmg containing the app, required configs, assets, and README.
+* Force-feedback status is clearly documented:
+    * working,
+    * partially working,
+    * not supported on detected macOS path,
+    * or pending implementation.
+Important constraints:
+* Do not introduce online multiplayer.
+* Do not add AI opponents yet.
+* Do not add a full menu system until the driving loop works.
+* Do not use large licensed assets.
+* Do not use copyrighted car, track, event, league, or series names.
+* Do not title the track “Indianapolis Motor Speedway” in-game.
+* Do not over-optimize before measuring, but keep the architecture performance-conscious.
+* Do not write everything in one giant file.
+* Do not hardcode tuning values that should live in config files.
+* Do not depend on Windows-only Logitech SDKs.
+* Do not assume DirectInput exists on macOS.
+* Do not claim force feedback is complete until a real G29 has been tested on macOS.
+First task:Set up the repository, CMake project, SDL3 window, Metal rendering path or Metal-compatible placeholder renderer, fixed timestep loop, keyboard input, debug overlay, config loading, and placeholder car object on a flat plane. Then provide build/run instructions and a short explanation of the architecture. Also include a small input diagnostic screen that lists connected SDL joystick/gamepad devices and their axes/buttons so the Logitech G29 can be mapped on macOS.
+
+
+
+Updated “how to run it” instructions for macOS
+You still do not need to host the game somewhere for it to run. Hosting would add latency and would not help with wheel force feedback.
+The workflow should be:
+
+Mac local folder → GitHub repo for backup/version control → local CMake build → macOS app → HDMI/USB-C-to-HDMI → TV
+
+Use GitHub for the code. Use GitHub Releases later for downloadable .zip or .dmg builds. GitHub Releases are intended for packaging project versions with downloadable release assets, and Git LFS is useful if your repo starts accumulating larger binary assets.
+Recommended macOS development setup
+Use this:
+
+Operating system: macOS
+Compiler/toolchain: Xcode Command Line Tools
+Build system: CMake
+Editor/IDE: VS Code, Cursor, CLion, or Xcode
+Window/input/audio: SDL3
+Renderer: Metal
+Version control: Git + GitHub
+Wheel software: Logitech G HUB only if useful for device recognition/configuration
+
+You can work in VS Code or Cursor and build from the terminal. You do not have to work inside Xcode, but you should install Xcode Command Line Tools because they provide Apple Clang, build tools, headers, and SDK access.
+Typical setup:
+
+xcode-select --install
+brew install cmake sdl3
+git clone <your-repo-url>
+cd sim-racing-prototype
+cmake -S . -B build
+cmake --build build --config Release
+
+What changes most from the Windows version
+The Windows prompt could reasonably say:
+
+Use Logitech Steering Wheel SDK for G29 input and force feedback.
+
+The macOS version should say:
+
+Use SDL3 and/or Apple Game Controller framework for wheel input.
+Treat force feedback as an experimental backend.
+Do not depend on Logitech’s Windows SDK.
+
+That is the most important correction. Steering, throttle, brake, and paddles are achievable first. High-quality G29 force feedback on macOS is the risk area.
+TV display setup on macOS
+Use:
+
+Mac → HDMI or USB-C-to-HDMI → TV
+
+Then:
+
+System Settings → Displays → choose TV → set resolution/refresh rate
+
+For lowest display lag:
+* Enable Game Mode on the TV.
+* Use fullscreen or borderless fullscreen.
+* Use 60 Hz output initially.
+* Avoid AirPlay for this project.
+* Use a wired USB connection for the G29, not Bluetooth or adapters through a flaky hub.
+Best first build target
+The coding agent’s first deliverable should not be the full sim. It should be this:
+
+macOS native app
+SDL3 window
+Metal-compatible renderer
+fixed timestep loop
+flat plane
+placeholder car
+keyboard driving
+device diagnostic screen
+debug overlay
+config file loading
+
+Then add G29 input mapping. Then the tire model. Then force-feedback testing.
+
+Leave this initial instructions doc so that you can go back for reference.
