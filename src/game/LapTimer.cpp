@@ -8,9 +8,21 @@ namespace sim {
 LapTimer::LapTimer(float lapLengthM) : lapLengthM_(std::max(1.0F, lapLengthM)) {}
 
 void LapTimer::reset(float progressM) {
+    reset(CheckpointState{
+        progressM,
+        std::clamp(static_cast<int>(progressM / std::max(1.0F, lapLengthM_ * 0.25F)), 0, 3),
+        4,
+    });
+}
+
+void LapTimer::reset(const CheckpointState& checkpoint) {
     state_ = {};
     state_.currentLapValid = true;
-    previousProgressM_ = progressM;
+    previousProgressM_ = checkpoint.distanceM;
+    startFinishDistanceM_ = std::fmod(checkpoint.startFinishDistanceM, lapLengthM_);
+    if (startFinishDistanceM_ < 0.0F) {
+        startFinishDistanceM_ += lapLengthM_;
+    }
     initialized_ = true;
 }
 
@@ -21,11 +33,23 @@ void LapTimer::resetRecords() {
 }
 
 void LapTimer::update(float progressM, bool onRacingSurface, float deltaSeconds) {
+    update(
+        CheckpointState{
+            progressM,
+            std::clamp(static_cast<int>(progressM / std::max(1.0F, lapLengthM_ * 0.25F)), 0, 3),
+            4,
+        },
+        onRacingSurface,
+        deltaSeconds);
+}
+
+void LapTimer::update(const CheckpointState& checkpoint, bool onRacingSurface, float deltaSeconds) {
     if (!initialized_) {
-        reset(progressM);
+        reset(checkpoint);
         return;
     }
 
+    const float progressM = checkpoint.distanceM;
     const float delta = forwardDelta(previousProgressM_, progressM);
     if (state_.active) {
         state_.currentLapSeconds += std::max(0.0F, deltaSeconds);
@@ -34,19 +58,18 @@ void LapTimer::update(float progressM, bool onRacingSurface, float deltaSeconds)
 
     if (delta > 0.0F) {
         if (!state_.active) {
-            if (crossed(previousProgressM_, delta, 0.0F)) {
+            if (crossed(previousProgressM_, delta, startFinishDistanceM_)) {
                 startLap(onRacingSurface);
             }
         } else {
-            const float checkpointDistance =
-                static_cast<float>(state_.nextCheckpoint) * lapLengthM_ * 0.25F;
-            if (state_.nextCheckpoint >= 1 && state_.nextCheckpoint <= 3 &&
-                crossed(previousProgressM_, delta, checkpointDistance)) {
+            while (state_.nextCheckpoint >= 1 &&
+                   state_.nextCheckpoint < std::max(1, checkpoint.checkpointCount) &&
+                   checkpoint.sector >= state_.nextCheckpoint) {
                 ++state_.nextCheckpoint;
             }
 
-            if (crossed(previousProgressM_, delta, 0.0F)) {
-                if (state_.nextCheckpoint == 4) {
+            if (crossed(previousProgressM_, delta, startFinishDistanceM_)) {
+                if (state_.nextCheckpoint >= std::max(1, checkpoint.checkpointCount)) {
                     completeLap(onRacingSurface);
                 } else {
                     startLap(onRacingSurface);

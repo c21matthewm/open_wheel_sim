@@ -91,19 +91,43 @@ thermal_grip = tires.thermal_grip_min
 This makes cold tires greasy, peaks grip near the configured target
 temperature, and reduces grip again when tires are overheated.
 
-Static setup camber contributes camber thrust before the combined-slip limiter:
+Each tire also carries a lightweight remaining-life value from `1.0` fresh to
+`0.0` worn. Wear loss is linear in sliding work and wheelspin work, using the
+same per-wheel slip and usage telemetry that drives temperature:
 
 ```text
+usage_work = max(0, tire_usage - 0.72)^2 * speed_weight
+slip_work = max(0, lateral_slip_load - 0.85)^2 * speed_weight
+spin_work = max(0, longitudinal_slip_load - 1.0)^2 * speed_weight
+tire_wear -= dt * (tires.wear_sliding_rate_per_work * (usage_work + slip_work)
+                   + tires.wear_wheelspin_rate_per_work * spin_work)
+```
+
+The tire's friction input is multiplied by a wear grip scale that linearly
+interpolates from `1.0` at full life to `tires.wear_min_grip` at zero life.
+Cruising wear is intentionally tiny; lockups, wheelspin, and sustained sliding
+are what visibly move the HUD tire-life bars.
+
+Setup camber and suspension camber gain contribute camber thrust before the
+combined-slip limiter:
+
+```text
+dynamic_bump_travel = suspension_compression - static_spring_compression
+physical_camber = setup_camber
+                  - suspension.camber_gain_rad_per_m * dynamic_bump_travel
 camber_thrust = tires.camber_stiffness_n_per_rad
-                * effective_camber_angle_rad
+                * solver_mirrored_camber_angle_rad
                 * normal_load / tires.load_reference_normal_n
 lateral_demand = lateral_slip_force + camber_thrust
 ```
 
-The configured front/rear camber values are mirrored left/right so straight-line
-camber thrust cancels instead of creating artificial drift. The road-course
-setup uses more aggressive static camber than the speedway setup, but camber is
-still a setup constant rather than a suspension-kinematic value.
+The configured front/rear camber values are physical static setup camber. The
+front and rear kinematic gain values add negative camber when a hub moves into
+bump and reduce it in droop. The result is mirrored left/right only at the tire
+solver boundary so straight-line camber thrust cancels instead of creating
+artificial drift. The road-course setup uses more aggressive static camber than
+the speedway setup, and the live physical camber per tire is exposed in
+`VehicleState`.
 
 Front and rear tires compute pneumatic trail in the tire solver:
 
@@ -181,11 +205,28 @@ upper midrange through peak power, and drops to zero at redline:
 
 ```text
 torque_multiplier = piecewise_linear(powertrain.torque_curve_knots, rpm / redline_rpm)
-engine_torque = powertrain.engine_torque_nm * torque_multiplier
+engine_torque = powertrain.engine_torque_nm * torque_multiplier * engine_map_torque_multiplier
 ```
 
 It is not an engine dyno simulation, but it gives gearing and RPM real meaning
 without heap allocation or per-step table parsing.
+
+Fuel is tracked in gallons on `VehicleState`. The drain rate is based on RPM,
+throttle load, and the active engine map:
+
+```text
+load_factor = fuel_idle_load_factor + (1 - fuel_idle_load_factor) * throttle
+rpm_factor = fuel_idle_rpm_factor + (1 - fuel_idle_rpm_factor) * rpm / redline
+fuel_burn = fuel_burn_gal_per_s_at_redline
+            * engine_map_fuel_multiplier
+            * load_factor
+            * rpm_factor
+```
+
+The map states are Lean, Standard, and Rich. Lean reduces torque and burn, Rich
+adds a small torque gain and extra burn, and Standard is the baseline. The HUD
+uses the smoothed average burn rate and current lap-length context to estimate
+fuel laps remaining.
 
 The default speedway gearing and low-drag aero package are stacked for
 Indianapolis: 6th gear redlines at about 239 mph with the configured 0.343 m
@@ -215,17 +256,46 @@ The preload term acts even with little or no throttle, while the ramp term adds
 lock under power. Legacy configs without any LSD keys retain the old
 `powertrain.differential_load_bias` rear split.
 
+## Suspension Damping
+
+Each corner uses spring force from suspension compression plus a directional
+damper force from relative hub/mount shaft speed:
+
+```text
+compression_rate = hub_velocity - chassis_mount_velocity
+damper = compression_rate >= 0
+         ? suspension.*_damper_bump_n_per_mps
+         : suspension.*_damper_rebound_n_per_mps
+spring_force = spring_rate * compression + damper * compression_rate
+```
+
+Positive compression rate means the wheel hub is moving into bump relative to
+the sprung chassis; negative compression rate means rebound/extension. Bump
+damping controls compression resistance, platform support, and weight-transfer
+speed. Rebound damping controls how quickly the wheel and chassis separate
+after compression, which affects wheel return rate and contact-patch recovery.
+The legacy `front_damper_n_per_mps` and `rear_damper_n_per_mps` fields remain
+fallbacks for older configs, but the default setup uses split bump/rebound
+values with rebound stiffer than bump.
+
 ## Weight Transfer And Aero
 
 Static axle load comes from mass, effective gravity, and
 `body.front_weight_fraction`.
-Longitudinal load transfer changes front/rear normal load:
+Longitudinal load transfer changes front/rear normal load. The instantaneous
+acceleration-derived target is passed through a first-order suspension/
+compliance response before it reaches the tire normal-load distribution:
 
 ```text
-transfer = mass * longitudinal_acceleration * center_of_mass_height / wheelbase
+instantaneous_transfer = mass * longitudinal_acceleration
+                         * center_of_mass_height / wheelbase
+alpha = 1 - exp(-dt / suspension.longitudinal_load_transfer_tau_s)
+filtered_transfer += alpha * (instantaneous_transfer - filtered_transfer)
 ```
 
-Positive acceleration moves load rearward. Braking moves load forward.
+Positive acceleration moves load rearward. Braking moves load forward. The
+default 0.08 s response makes initial braking and launch load build through the
+platform rather than appearing at full magnitude in one 360 Hz step.
 
 Lateral load transfer changes left/right normal load:
 
@@ -273,24 +343,35 @@ component directly to tire normal loads so high-speed platform changes are felt
 without waiting entirely for suspension lag. Aerodynamic drag is also quadratic
 with speed and acts longitudinally against vehicle motion.
 
+Runtime front/rear wing settings are applied as setup offsets on top of the
+active aero preset. More front wing shifts the center of pressure forward and
+raises effective front cornering stiffness. More rear wing increases total
+downforce, rear cornering authority, and drag, creating the expected stability
+versus top-speed tradeoff. These settings are live-adjustable from the Escape
+menu and are not persisted to JSON.
+
 Aerodynamic yaw damping adds a stabilizing yaw moment that rises with speed
-squared:
+squared and with the squared cosine of the angle between body heading and
+velocity heading:
 
 ```text
+yaw_alignment = cos(velocity_heading - body_heading)^2
+yaw_scale = aero.yaw_damping_rear_slide_min_scale
+            + (1 - aero.yaw_damping_rear_slide_min_scale) * yaw_alignment
 yaw_damping = aero.yaw_damping_nm_per_rad_s
               * speed^2 / aero.yaw_damping_reference_speed_mps^2
+              * yaw_scale
               * yaw_rate
 yaw_moment -= yaw_damping
 ```
 
 At parking-lot speeds this term is effectively absent. At speedway speeds it
 helps the car resist and settle small yaw perturbations without changing the
-360 Hz fixed-step model or adding state. The configured baseline is intentionally
-modest, and the damping is faded toward
-`aero.yaw_damping_rear_slide_min_scale` when the rear tires exceed the lateral
-or longitudinal peak-slip window. Rear breakaway is therefore governed by the
-tire curve, combined-slip budget, and rigid-body moments rather than by an aero
-damping clamp that catches the slide.
+360 Hz fixed-step model or adding state. Normal small yaw angles retain nearly
+full damping, while a sideways spin collapses toward the configured floor
+`aero.yaw_damping_rear_slide_min_scale`. Rear breakaway is therefore governed by
+the tire curve, combined-slip budget, heading geometry, and rigid-body moments
+rather than by an aero damping clamp that catches the slide.
 
 The active aero package is selected by `Vehicle::setAeroPreset`. The configured
 `aero_presets.speedway` and `aero_presets.road_course` packages independently
@@ -299,10 +380,11 @@ height, and stall reduction. Speedway mode is lower-drag and more rear-biased;
 road-course mode adds downforce and front aero balance for sharper braking and
 turn-in.
 
-## Banking
+## Banking And Grade
 
-Track banking now contributes to the planar physics model. `RaceSession`
-passes the sampled banking angle into `Vehicle::step`.
+Track banking and road grade now contribute to the planar physics model.
+`RaceSession` passes the sampled banking angle and road pitch angle into
+`Vehicle::step`.
 
 The car receives a lateral gravity force from banking:
 
@@ -327,34 +409,112 @@ The apron and infield stay flat at `Y = 0`; only asphalt outside the inner road
 edge gains banked height. This avoids the previous centerline-height jump that
 made corner entry and exit feel like a vertical hump.
 
+Track samples also expose lightweight per-wheel terrain contact data:
+`road_height_y_m`, road normal, surface roughness, and curb height/phase.
+These are deterministic procedural values, not scanned assets. The oval uses
+the analytic banking height plus subtle seam/undulation waves in lap-distance
+space. The Hill Circuit uses the elevation spline plus lateral camber, with a
+raised procedural curb profile only inside the curb band. `RaceSession`
+subtracts the vehicle-center smooth analytic road height from each wheel sample
+before handing contacts to `Vehicle::step`, so the physics sees local patch
+height relative to the car instead of absolute world elevation. Renderer car
+placement and ghost placement keep using the smooth height, letting the
+suspension filter carry the roughness instead of visually teleporting the
+whole car over every procedural seam.
+
+The vehicle filters each wheel's local contact height before using it in the
+vertical tire model:
+
+```text
+alpha = 1 - exp(-dt / terrain.contact_height_filter_tau_s)
+filtered_road_height += alpha * (target_road_height - filtered_road_height)
+tire_compression = static_tire_compression - hub_travel
+                   + filtered_road_height
+tire_force = tire_vertical_stiffness * tire_compression
+             - tire_vertical_damping
+               * (hub_velocity - filtered_road_height_velocity)
+normal_load = tire_force / road_normal.y
+ride_height = static_ride_height + chassis_mount_travel
+              - filtered_road_height
+```
+
+The existing banking/grade gravity terms remain active; contact normals are
+used for tire vertical response and normal-load projection rather than as a
+second gravity model. Disabling `terrain.terrain_height_enabled` keeps the old
+analytic smooth-plane behavior for physics while preserving the renderer's
+track height.
+
 Bank angle now uses quintic smoothstep easements centered on turn entry and
 exit. With the default `geometry.bank_transition_runout_m = 50.0`, banking
 starts blending in 50 m before turn entry, reaches full banking 50 m into the
 corner, then blends out symmetrically at corner exit. This gives continuous
 height/roll acceleration and avoids abrupt entrance/exit humps.
 
+Road-course grade is injected as a longitudinal gravity component:
+
+```text
+gravity_longitudinal_force = -mass * gravity * sin(road_pitch_angle)
+effective_gravity *= cos(road_pitch_angle)
+```
+
+Positive grade resists the car uphill; negative grade accelerates it downhill
+and slightly reduces normal load. The Hill Circuit elevation spline uses this
+path to make downhill braking zones and the corkscrew-style drop affect load
+transfer without adding new vehicle state.
+
 ## Track And Surfaces
 
-The procedural stadium oval is approximately 2.5 miles around its centerline.
-The road includes config-driven quintic banking transitions up to 9.2 degrees.
-The track surface remains an analytic smooth road plane, but banking
-contributes lateral gravity, effective-normal-load adjustments, and renderer
-road height/bank orientation.
+The procedural stadium oval is approximately 2.5 miles around its centerline
+with IMS-derived dimensions: 3,300 ft straights, 660 ft short chutes, the
+mathematically correct 256.135 m centerline turn radius, 55 ft average physics
+road width, 20 ft apron, close outer SAFER-wall spacing, and a 300 ft quintic
+banking runout. The renderer widens the visible road from 50 ft on straights to
+60 ft in turns, but physics still uses the average width until per-segment oval
+surface widths are promoted into the hot path.
+The Hill Circuit is a 3.6 km counterclockwise natural-terrain road circuit with
+11 turns, curb strips, grass runoff, armco-style barriers, and a 55 m-class
+peak-to-valley elevation profile. Banking/camber, grade, and local
+deterministic contact height contribute gravity terms, effective-normal-load
+adjustments, tire vertical response, aero ride-height variation, and renderer
+road height/orientation.
 
-The track classifies the car as asphalt, apron, or grass. Each surface applies
-config-driven lateral-grip and rolling-resistance multipliers. Grass also has
-a separate longitudinal grip multiplier: it keeps low cornering grip so the car
-slides easily, but has enough straight-line tire bite to escape with digital
-throttle. `RaceSession` then applies extra grass-trap rolling resistance plus
-speed-sensitive damping so fast off-track excursions bleed speed aggressively
-without stranding the car at low speed. Leaving asphalt invalidates the current
-timed lap. The
+The track classifies each queried point as asphalt, apron, curb, or grass using the
+`TrackSurface` enum; the config path is parsed once at startup and the fixed
+physics loop does not compare surface strings. `RaceSession` samples all four
+wheel contact patch positions each step and passes per-wheel lateral grip,
+longitudinal grip, rolling resistance, banking, road pitch, tangent data,
+relative road height, road normal, and curb/roughness metadata into
+`Vehicle::step`. If one side straddles the apron while the car center remains
+on asphalt, only those tires lose grip, gain drag, and ride on that surface's
+contact height.
+
+Each surface applies config-driven lateral-grip and rolling-resistance
+multipliers. Grass also has a separate longitudinal grip multiplier: it keeps
+low cornering grip so the car slides easily, but has enough straight-line tire
+bite to escape with digital throttle. `RaceSession` then applies extra
+grass-trap rolling resistance per grass-contact tire plus speed-sensitive
+damping scaled by grass contact fraction, so fast off-track excursions bleed
+speed aggressively without stranding the car at low speed. Curbs and the apron
+remain valid for timing. Lap validity samples only the vehicle center, so a
+single tire touching grass does not invalidate the lap while per-wheel grass
+physics still applies; a lap is invalidated once the vehicle center reaches
+grass or the car contacts a barrier. The
 outer wall and visible inner infield wall use yaw-aware four-corner
 bounding-box collision, contact-point linear/yaw impulse response, and low
-restitution.
+restitution. A conservative center-clearance broad phase skips corner sampling
+when the vehicle's complete collision circle is clear of both barriers; near a
+wall, the original iterative four-corner queries and impulses remain active.
+Hill Circuit wheel contact patches use the exact vehicle-center lap distance as
+a local centerline hint, avoiding a circuit-wide nearest-point search without
+changing the sampled branch of track beneath the car.
 
 Lap timing starts after crossing start/finish and requires four ordered
-checkpoints, preventing shortcut laps.
+checkpoints, preventing shortcut laps. Oval distance zero is the center of the
+front straight. The config-driven Yard of Bricks/start-finish gate is 304.8 m
+forward along the racing direction, followed by gates at 1310.64 m, 2316.48 m,
+and 3322.32 m. `LapTimer` consumes the track-provided
+start/finish distance rather than assuming the geometric lap origin is the
+timing line.
 
 ## Units
 
@@ -372,20 +532,23 @@ with 360 Hz as the default. Render timing does not alter the physics timestep.
 
 ## Known Simplifications
 
-- Suspension runs against a smooth local track plane; there are no per-wheel
-  terrain height samples, potholes, curbs, or arbitrary 3D mesh contacts yet.
+- Suspension now receives per-wheel deterministic contact heights/normals for
+  banking transitions, curbs, seams, and surface undulation. There are still no
+  scanned heightmaps, pothole assets, or arbitrary 3D mesh contacts.
 - The tire model has load/speed-dependent lateral and longitudinal relaxation
-  length, dynamic relaxed slip ratio, combined-slip limiting, static setup
-  camber thrust, and a lightweight slip/usage-driven tire
-  temperature and thermal grip state. Pneumatic trail is modeled as a compact
-  self-aligning moment for the front and rear tires. There is still no
-  pressure, wear, carcass modes, dynamic camber gain, or contact-patch
-  deformation model.
+  length, dynamic relaxed slip ratio, combined-slip limiting,
+  suspension-coupled camber thrust, lightweight tire wear, and a lightweight
+  slip/usage-driven tire temperature and thermal grip state. Pneumatic trail is
+  modeled as a compact self-aligning moment for the front and rear tires. There
+  is still no pressure, carcass modes, full suspension geometry solver, or
+  contact-patch deformation model.
 - Brake discs are currently clean metallic render parts, not thermal brake
   simulations.
 - Tire smoke/dust and undertray sparks are renderer-side presentation effects,
   not particle/fluid/debris simulations. Exhaust flame and rear-exhaust heat
   shimmer are intentionally not rendered.
+- Lap invalidation uses the vehicle center surface rather than polygon/track-limit
+  rules for every tire contact patch.
 - No general collision shapes; only the oval outer and inner wall loops are
   active, using a yaw-aware vehicle bounding box
 - The engine curve is intentionally simple and not based on measured engine data

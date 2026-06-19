@@ -1,0 +1,51 @@
+{
+  "track_type": "hillcircuit",
+  "name": "Hill Circuit",
+  "lap_length_m": 3600.0,
+  "road_width_m": 12.0,
+  "curb_width_m": 1.5,
+  "runoff_width_m": 6.0,
+  "surface_asphalt": {
+    "lateral_grip": 1.0,
+    "longitudinal_grip": 1.0,
+    "rolling_resistance": 1.0
+  },
+  "surface_curb": {
+    "lateral_grip": 0.85,
+    "longitudinal_grip": 0.80,
+    "rolling_resistance": 1.8
+  },
+  "surface_grass": {
+    "lateral_grip": 0.32,
+    "longitudinal_grip": 1.65,
+    "rolling_resistance": 6.5
+  },
+  "terrain": {
+    "terrain_height_enabled": true,
+    "asphalt_roughness_m": 0.004,
+    "oval_seam_amp_m": 0.008,
+    "oval_undulation_amp_m": 0.006,
+    "curb_height_m": 0.045,
+    "contact_height_filter_tau_s": 0.035
+  },
+  "barrier_outer_offset_m": 1.0,
+  "barrier_inner_offset_m": 1.0,
+  "wall_restitution": 0.12,
+  "wall_friction": 0.55,
+  "checkpoints": [620, 1300, 1960, 2560],
+  "spawn_distance_m": 3400.0,
+  "spawn_heading_offset_deg": 0.0,
+  "render": {
+    "segments": 900
+  },
+  "elevation_spine": [
+    [0, 0.0], [180, 8.0], [320, 12.0], [420, 8.5], [520, 5.0],
+    [600, 3.5], [720, 4.0], [820, 5.5], [900, 5.0], [980, 5.5],
+    [1040, 6.0], [1130, 6.5], [1220, 7.0], [1300, 7.5], [1390, 9.0],
+    [1470, 11.5], [1540, 14.0], [1590, 16.0], [1640, 17.5], [1730, 20.0],
+    [1780, 22.0], [1830, 22.0], [1870, 16.0], [1910, 10.5], [1960, 4.0],
+    [2060, 1.0], [2160, 0.5], [2240, 1.5], [2320, 3.0], [2390, 4.5],
+    [2460, 5.0], [2560, 4.5], [2640, 3.5], [2720, 2.0], [3150, 1.0],
+    [3600, 0.0]
+  ]
+}

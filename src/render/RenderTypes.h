@@ -40,4 +40,16 @@ struct RenderScene {
     int cameraMode = 0;
 };
 
+struct HomeScreenState {
+    int pixelWidth = 1280;
+    int pixelHeight = 720;
+    int selectedItem = 0;
+    int selectedTrack = 0;
+    float frontWingSetting = 0.0F;
+    float rearWingSetting = 0.0F;
+    float wingSettingMin = -3.0F;
+    float wingSettingMax = 3.0F;
+    float brakeBias = 0.58F;
+};
+
 }  // namespace sim

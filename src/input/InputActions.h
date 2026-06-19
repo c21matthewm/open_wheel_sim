@@ -20,6 +20,7 @@ struct InputActions {
     bool toggleDiagnostics = false;
     bool toggleOverlay = false;
     bool toggleCamera = false;
+    bool toggleEngineMap = false;
     bool quit = false;
     bool wheelActive = false;
 };

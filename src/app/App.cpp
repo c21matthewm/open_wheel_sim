@@ -38,6 +38,11 @@ int App::run() {
         shutdown();
         return 1;
     }
+    if (benchmarkDurationSeconds_ > 0.0F && !startRacingFromHome()) {
+        std::fprintf(stderr, "Failed to start selected track for benchmark\n");
+        shutdown();
+        return 1;
+    }
 
     GameLoop gameLoop(1.0F / static_cast<float>(graphicsConfig_.physicsHz), graphicsConfig_.maxFrameDelta);
     running_ = true;
@@ -61,9 +66,6 @@ int App::run() {
         if (actions.quit) {
             running_ = false;
         }
-        if (actions.toggleMenu) {
-            menuVisible_ = !menuVisible_;
-        }
         if (actions.toggleFullscreen) {
             window_.toggleFullscreen();
         }
@@ -73,8 +75,62 @@ int App::run() {
         if (actions.toggleOverlay) {
             overlay_->toggleVisible();
         }
+        if (appState_ == AppState::Home) {
+            handleHomeActions(actions);
+            input_.centerKeyboardSteer();
+            measured.inputMs = milliseconds(inputStart, Clock::now());
+
+            const Clock::time_point physicsStart = Clock::now();
+            while (gameLoop.shouldStep()) {
+                gameLoop.consumeStep();
+            }
+            measured.physicsMs = milliseconds(physicsStart, Clock::now());
+            VehicleState idleVehicle = vehicle_->current();
+            idleVehicle.speedMps = 0.0F;
+            idleVehicle.rpm = 1200.0F;
+            sound_.update(idleVehicle, InputActions{}, raceSession_->telemetry());
+
+            const Clock::time_point renderStart = Clock::now();
+            if (!renderer_.renderHome(homeScreenState())) {
+                std::fprintf(stderr, "Render failure: %s\n", renderer_.error().c_str());
+                running_ = false;
+            }
+            measured.renderMs = milliseconds(renderStart, Clock::now());
+            measured.frameMs = milliseconds(frameStart, Clock::now());
+            updateSmoothedStats(frameSeconds, measured);
+            if (benchmarkDurationSeconds_ > 0.0F) {
+                benchmarkElapsedSeconds_ += measured.frameMs * 0.001F;
+                benchmarkFrameMsTotal_ += measured.frameMs;
+                benchmarkPhysicsMsTotal_ += measured.physicsMs;
+                benchmarkRenderMsTotal_ += measured.renderMs;
+                benchmarkPhysicsSteps_ += measured.physicsSteps;
+                ++benchmarkFrames_;
+                if (benchmarkElapsedSeconds_ >= benchmarkDurationSeconds_) {
+                    const double frames = std::max(1, benchmarkFrames_);
+                    const double elapsed = std::max(0.001, static_cast<double>(benchmarkElapsedSeconds_));
+                    std::fprintf(
+                        stderr,
+                        "BENCHMARK %.2fs: FPS %.1f  FRAME %.2f ms  PHYS %.3f ms  RENDER %.2f ms  PHYS_STEPS %.1f/s\n",
+                        benchmarkElapsedSeconds_,
+                        static_cast<double>(benchmarkFrames_) / elapsed,
+                        benchmarkFrameMsTotal_ / frames,
+                        benchmarkPhysicsMsTotal_ / frames,
+                        benchmarkRenderMsTotal_ / frames,
+                        static_cast<double>(benchmarkPhysicsSteps_) / elapsed);
+                    running_ = false;
+                }
+            }
+            continue;
+        }
+
+        if (actions.toggleMenu) {
+            menuVisible_ = !menuVisible_;
+        }
         if (actions.toggleCamera && !menuVisible_) {
             cameraMode_ = cameraMode_ == 0 ? 1 : 0;
+        }
+        if (actions.toggleEngineMap && !menuVisible_) {
+            vehicle_->cycleEngineMap();
         }
         handleMenuActions(actions);
         if (menuVisible_) {
@@ -190,6 +246,11 @@ bool App::initialize() {
         return false;
     }
     graphicsConfig_.load(graphicsFile);
+    if (const char* activeTrack = std::getenv("SIM_ACTIVE_TRACK"); activeTrack != nullptr) {
+        graphicsConfig_.activeTrack = activeTrack;
+    }
+    selectedTrackIndex_ =
+        (graphicsConfig_.activeTrack == "hillcircuit" || graphicsConfig_.activeTrack == "hill_circuit") ? 1 : 0;
 
     ConfigFile inputFile;
     if (!loadConfig("config/input_default.json", inputFile)) {
@@ -203,11 +264,10 @@ bool App::initialize() {
     }
     vehicleConfig_.load(vehicleFile);
 
-    ConfigFile trackFile;
-    if (!loadConfig("config/track_oval_default.json", trackFile)) {
+    if (!loadTrackConfigForSelection(selectedTrackIndex_, trackConfig_)) {
         return false;
     }
-    trackConfig_.load(trackFile);
+    loadedTrackIndex_ = selectedTrackIndex_;
 
     ConfigFile ffbFile;
     if (!loadConfig("config/ffb_default.json", ffbFile)) {
@@ -234,7 +294,7 @@ bool App::initialize() {
     }
     forceFeedback_.initialize(forceFeedbackConfig_);
     vehicle_ = std::make_unique<Vehicle>(vehicleConfig_);
-    vehicle_->setAeroPreset(0);  // Default to speedway aero for oval
+    vehicle_->setAeroPreset(trackConfig_.type == "hillcircuit" ? 1 : 0);
     raceSession_ = std::make_unique<RaceSession>(trackConfig_);
     raceSession_->resetVehicle(*vehicle_);
     overlay_ = std::make_unique<DebugOverlay>(inputConfig_.diagnosticsVisibleOnStart);
@@ -253,6 +313,7 @@ bool App::initialize() {
             graphicsConfig_.bloomQuarterWeight,
             graphicsConfig_.hudGlassBlurRadiusPx,
             graphicsConfig_.hudGlassRefractionRadiusPx,
+            graphicsConfig_.skidmarkMaxSegments,
             graphicsConfig_.cameraStartupShakeSuppressionS,
             graphicsConfig_.cameraStartupShakeFadeS,
             graphicsConfig_.cameraAsphaltShake,
@@ -286,12 +347,83 @@ void App::shutdown() {
     window_.shutdown();
 }
 
+bool App::loadTrackConfigForSelection(int selectedTrack, TrackConfig& trackConfig) const {
+    ConfigFile trackFile;
+    const bool useHillCircuit = selectedTrack == 1;
+    if (!loadConfig(
+            useHillCircuit ? "config/track_hillcircuit_default.json" : "config/track_oval_default.json",
+            trackFile)) {
+        return false;
+    }
+    trackConfig.load(trackFile);
+    return true;
+}
+
+bool App::startRacingFromHome() {
+    TrackConfig selectedTrackConfig;
+    if (!loadTrackConfigForSelection(selectedTrackIndex_, selectedTrackConfig)) {
+        return false;
+    }
+
+    const bool trackChanged = selectedTrackIndex_ != loadedTrackIndex_;
+    trackConfig_ = selectedTrackConfig;
+    raceSession_ = std::make_unique<RaceSession>(trackConfig_);
+    loadedTrackIndex_ = selectedTrackIndex_;
+    vehicle_->setAeroPreset(trackConfig_.type == "hillcircuit" ? 1 : 0);
+    raceSession_->resetVehicle(*vehicle_);
+    if (trackChanged && !renderer_.reloadTrackGeometry(raceSession_->track())) {
+        std::fprintf(stderr, "Track reload failed: %s\n", renderer_.error().c_str());
+        return false;
+    }
+
+    appState_ = AppState::Racing;
+    menuVisible_ = false;
+    selectedMenuItem_ = 0;
+    input_.centerKeyboardSteer();
+    return true;
+}
+
+void App::handleHomeActions(const InputActions& actions) {
+    constexpr int kHomeItemCount = 5;
+    if (actions.menuUp) {
+        selectedHomeItem_ = (selectedHomeItem_ + kHomeItemCount - 1) % kHomeItemCount;
+    }
+    if (actions.menuDown) {
+        selectedHomeItem_ = (selectedHomeItem_ + 1) % kHomeItemCount;
+    }
+
+    const int adjustment = (actions.menuRight ? 1 : 0) - (actions.menuLeft ? 1 : 0);
+    if (adjustment != 0) {
+        switch (selectedHomeItem_) {
+            case 0:
+                selectedTrackIndex_ = (selectedTrackIndex_ + adjustment + 2) % 2;
+                break;
+            case 1:
+                vehicle_->adjustFrontWingSetting(static_cast<float>(adjustment));
+                break;
+            case 2:
+                vehicle_->adjustRearWingSetting(static_cast<float>(adjustment));
+                break;
+            case 3:
+                vehicle_->setBrakeBias(
+                    vehicle_->brakeBias() + 0.01F * static_cast<float>(adjustment));
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (actions.menuSelect && !startRacingFromHome()) {
+        running_ = false;
+    }
+}
+
 void App::handleMenuActions(const InputActions& actions) {
     if (!menuVisible_) {
         return;
     }
 
-    constexpr int kMenuItemCount = 7;
+    constexpr int kMenuItemCount = 11;
     if (actions.menuUp) {
         selectedMenuItem_ = (selectedMenuItem_ + kMenuItemCount - 1) % kMenuItemCount;
     }
@@ -313,13 +445,22 @@ void App::handleMenuActions(const InputActions& actions) {
                 input_.setKeyboardRates(inputConfig_.keyboardSteerRate, inputConfig_.keyboardReturnRate);
                 break;
             case 2:
+                vehicle_->adjustFrontWingSetting(static_cast<float>(adjustment));
+                break;
+            case 3:
+                vehicle_->adjustRearWingSetting(static_cast<float>(adjustment));
+                break;
+            case 4:
                 vehicle_->setBrakeBias(
                     vehicle_->brakeBias() + 0.01F * static_cast<float>(adjustment));
                 break;
-            case 3:
+            case 5:
+                vehicle_->setEngineMap((vehicle_->engineMap() + adjustment + 3) % 3);
+                break;
+            case 6:
                 vehicle_->setAutomaticShift(!vehicle_->automaticShift());
                 break;
-            case 4:
+            case 7:
                 vehicle_->setAeroPreset((vehicle_->aeroPreset() + 1) % 2);
                 break;
             default:
@@ -330,14 +471,21 @@ void App::handleMenuActions(const InputActions& actions) {
     if (!actions.menuSelect) {
         return;
     }
-    if (selectedMenuItem_ == 3) {
-        vehicle_->setAutomaticShift(!vehicle_->automaticShift());
-    } else if (selectedMenuItem_ == 4) {
-        vehicle_->setAeroPreset((vehicle_->aeroPreset() + 1) % 2);
-    } else if (selectedMenuItem_ == 5) {
-        raceSession_->resetRecords();
+    if (selectedMenuItem_ == 5) {
+        vehicle_->cycleEngineMap();
     } else if (selectedMenuItem_ == 6) {
+        vehicle_->setAutomaticShift(!vehicle_->automaticShift());
+    } else if (selectedMenuItem_ == 7) {
+        vehicle_->setAeroPreset((vehicle_->aeroPreset() + 1) % 2);
+    } else if (selectedMenuItem_ == 8) {
+        raceSession_->resetRecords();
+    } else if (selectedMenuItem_ == 9) {
         menuVisible_ = false;
+    } else if (selectedMenuItem_ == 10) {
+        appState_ = AppState::Home;
+        menuVisible_ = false;
+        selectedHomeItem_ = 0;
+        input_.centerKeyboardSteer();
     }
 }
 
@@ -351,8 +499,25 @@ InputActions App::drivingActionsFor(const InputActions& actions) const {
         driving.shiftUp = false;
         driving.shiftDown = false;
         driving.resetCar = false;
+        driving.toggleEngineMap = false;
     }
     return driving;
+}
+
+HomeScreenState App::homeScreenState() const {
+    HomeScreenState state;
+    state.pixelWidth = window_.pixelWidth();
+    state.pixelHeight = window_.pixelHeight();
+    state.selectedItem = selectedHomeItem_;
+    state.selectedTrack = selectedTrackIndex_;
+    state.frontWingSetting =
+        vehicle_ != nullptr ? vehicle_->frontWingSetting() : vehicleConfig_.frontWingSetting;
+    state.rearWingSetting =
+        vehicle_ != nullptr ? vehicle_->rearWingSetting() : vehicleConfig_.rearWingSetting;
+    state.wingSettingMin = vehicleConfig_.wingSettingMin;
+    state.wingSettingMax = vehicleConfig_.wingSettingMax;
+    state.brakeBias = vehicle_ != nullptr ? vehicle_->brakeBias() : vehicleConfig_.brakeBias;
+    return state;
 }
 
 MenuOverlayState App::menuOverlayState() const {
@@ -362,8 +527,14 @@ MenuOverlayState App::menuOverlayState() const {
     state.keyboardSteerRate = inputConfig_.keyboardSteerRate;
     state.keyboardReturnRate = inputConfig_.keyboardReturnRate;
     state.brakeBias = vehicle_ != nullptr ? vehicle_->brakeBias() : vehicleConfig_.brakeBias;
+    state.frontWingSetting =
+        vehicle_ != nullptr ? vehicle_->frontWingSetting() : vehicleConfig_.frontWingSetting;
+    state.rearWingSetting =
+        vehicle_ != nullptr ? vehicle_->rearWingSetting() : vehicleConfig_.rearWingSetting;
     state.automaticShift =
         vehicle_ != nullptr ? vehicle_->automaticShift() : vehicleConfig_.automaticShift;
+    state.engineMapName =
+        vehicle_ != nullptr ? vehicle_->engineMapName() : "STANDARD";
     state.ghostAvailable =
         raceSession_ != nullptr && raceSession_->telemetry().ghost.available;
     state.aeroPresetName =

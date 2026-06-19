@@ -6,18 +6,22 @@ app after editing; live reload is not implemented yet.
 ## Steering
 
 - `steering.max_road_wheel_angle_deg`: maximum physical front-wheel angle. The
-  default `18.0` is the full rack limit and remains available at every speed.
+  default `18.0` is the full rack limit. Direct wheel input can still request
+  the full rack range at every speed.
 - `steering.high_speed_steer_scale`: input-side keyboard response scale once
   the threshold speed is reached. It slows how quickly keyboard steering moves
-  toward full lock, but it does not clamp the physical rack angle.
+  and caps the maximum keyboard target at high speed so held digital steering
+  cannot command full lock and stall the front tires on speedway straights.
 - `steering.steer_speed_threshold_mps`: speed where the high-speed steering
   scale is fully applied.
 - `keyboard.steer_rate`: how quickly keyboard steering reaches full input.
 - `keyboard.return_rate`: how quickly keyboard steering recenters.
 
-Escape opens a runtime tuning menu where keyboard steer/return rates, brake
-bias, automatic shifting, and records/ghost state can be adjusted for the
-current run. These runtime changes are not written back to JSON yet.
+Escape opens a runtime tuning menu where keyboard steer/return rates, front
+wing, rear wing, brake bias, engine map, automatic shifting, aero preset, and
+records/ghost state can be adjusted for the current run. These runtime changes
+are not written back to JSON yet. Press `M` while driving to cycle the engine
+map without opening the menu.
 
 ## Grip And Balance
 
@@ -27,6 +31,14 @@ current run. These runtime changes are not written back to JSON yet.
 - `tires.longitudinal_stiffness_n`: drive/brake response to slip ratio.
 - `tires.camber_stiffness_n_per_rad`: camber-thrust contribution before the
   combined-slip limiter.
+- `tires.camber_angle_front_rad` and `camber_angle_rear_rad`: static physical
+  setup camber for the active speedway package. The road-course override fields
+  use the same units.
+- `suspension.front_camber_gain_deg_per_m` and
+  `rear_camber_gain_deg_per_m`: suspension kinematic camber gain. Positive
+  values add negative camber in bump and remove it in droop. These interact
+  with spring and ARB tuning: a stiffer axle compresses less per g, so the tire
+  reaches less dynamic negative camber at peak load than with a softer setup.
 - `tires.stiffness_speed_softening`: high-speed cornering-stiffness reduction
   from tire carcass growth. Higher values make the car lazier at very high
   wheel speeds.
@@ -54,6 +66,11 @@ current run. These runtime changes are not written back to JSON yet.
   temperature. Narrower values make warm-up and overheating more punishing.
 - `tires.thermal_grip_min`: minimum thermal grip multiplier for very cold or
   overheated tires.
+- `tires.wear_min_grip`: grip multiplier approached by a fully worn tire.
+- `tires.wear_sliding_rate_per_work`: tire-life loss from sustained lateral
+  slip and near-limit usage.
+- `tires.wear_wheelspin_rate_per_work`: tire-life loss from drive/brake slip
+  and wheelspin.
 - `tires.lateral_load_transfer_grip_loss`: small global grip trim as lateral
   load transfer rises.
 - `tires.load_sensitivity`: heavily loaded tires become slightly less efficient.
@@ -69,6 +86,22 @@ current run. These runtime changes are not written back to JSON yet.
   contribution to roll-axis load-transfer distribution. More front ARB shifts
   load transfer forward and increases understeer; more rear ARB shifts it
   rearward and makes the car more willing to rotate.
+- `suspension.front_damper_bump_n_per_mps` and
+  `rear_damper_bump_n_per_mps`: compression damping. More low/shaft-speed bump
+  support slows roll and weight-transfer rate; too much can make turn-in and
+  banking transitions nervous.
+- `suspension.front_damper_rebound_n_per_mps` and
+  `rear_damper_rebound_n_per_mps`: extension damping. More rebound slows wheel
+  return after compression and can keep a tire loaded longer, but too much can
+  jack the platform down and reduce contact recovery. Increasing front rebound
+  relative to front bump can reduce mid-corner understeer by helping the front
+  stay loaded through the apex.
+- `suspension.front_damper_n_per_mps` and `rear_damper_n_per_mps`: legacy
+  fallback values used only when the split bump/rebound fields are absent.
+- `suspension.longitudinal_load_transfer_tau_s`: first-order response time for
+  acceleration/braking load transfer. Higher values make front/rear tire load
+  build more gradually; lower values make brake-lockup and launch response more
+  immediate. The default is `0.08` seconds.
 
 More front stiffness generally sharpens turn-in. Excess rear stiffness relative
 to available rear grip can make the car less forgiving.
@@ -99,6 +132,18 @@ to available rear grip can make the car less forgiving.
 - `powertrain.automatic_transmission`: keeps keyboard driving usable without a
   shifter when enabled. When disabled, paddles/keyboard shift inputs are the
   only way to change gear.
+- `powertrain.fuel_capacity_gallons` and `fuel_initial_gallons`: maximum and
+  starting fuel load for the current run.
+- `powertrain.fuel_burn_gal_per_s_at_redline`: full-load standard-map fuel
+  burn reference at redline.
+- `powertrain.fuel_average_burn_response_hz`: smoothing rate for the average
+  burn value used by the HUD laps-remaining estimate.
+- `powertrain.fuel_idle_load_factor` and `fuel_idle_rpm_factor`: idle-side
+  shape factors for fuel burn at low throttle and low RPM.
+- `powertrain.engine_map_*_fuel_multiplier`: Lean/Standard/Rich mixture fuel
+  burn scalars.
+- `powertrain.engine_map_*_torque_multiplier`: Lean/Standard/Rich engine
+  output scalars.
 - `powertrain.lsd_preload_nm`: rear limited-slip differential preload that
   resists left/right rear wheel-speed difference even at low throttle.
 - `powertrain.lsd_ramp_factor`: additional LSD locking torque as rear drive
@@ -125,9 +170,25 @@ to available rear grip can make the car less forgiving.
   does not mask tire breakaway.
 - `aero.yaw_damping_reference_speed_mps`: speed where the yaw damping
   coefficient is applied at full scalar strength before the `speed^2` scale.
-- `aero.yaw_damping_rear_slide_min_scale` and
-  `aero.yaw_damping_rear_slide_full_saturation`: fade yaw damping during rear
-  tire over-limit slides so excess steering/throttle can produce organic spins.
+- `aero.yaw_damping_rear_slide_min_scale`: minimum aero yaw-damping floor after
+  heading alignment is applied. Forward motion keeps full damping, while a
+  sideways spin collapses toward this floor instead of being caught by full
+  speed-squared damping.
+- `aero.yaw_damping_rear_slide_full_saturation`: legacy config field retained
+  for compatibility with older setup files; the current solver uses geometric
+  heading alignment rather than rear-slip saturation to fade aero yaw damping.
+- `setup.front_wing_setting`: runtime/default front wing offset. More front
+  wing shifts aero balance forward and increases effective front cornering
+  stiffness.
+- `setup.rear_wing_setting`: runtime/default rear wing offset. More rear wing
+  increases total downforce, rear tire authority, and drag.
+- `setup.wing_setting_min` and `wing_setting_max`: clamp range for live wing
+  adjustments.
+- `setup.front_wing_aero_balance_per_step`,
+  `front_wing_cornering_stiffness_per_step`,
+  `rear_wing_downforce_per_step`, `rear_wing_drag_per_step`, and
+  `rear_wing_cornering_stiffness_per_step`: per-click physics effects for the
+  setup menu wing controls.
 - `resistance.rolling_resistance_n`: constant rolling resistance while moving.
 
 Throttle, brake, and lateral tire forces now share each wheel's friction budget.
@@ -173,25 +234,85 @@ support still depends on what macOS and SDL expose for the connected wheel.
 
 ## Track And Surface Tuning
 
-Track settings live in `config/track_oval_default.json`:
+Track settings live in `config/track_oval_default.json` and
+`config/track_hillcircuit_default.json`. The runtime selector is
+`simulation.active_track` in `config/graphics_default.json`; it defaults to
+`oval` and accepts `hillcircuit`. `SIM_ACTIVE_TRACK=hillcircuit` can override
+the selector for one launch.
 
+- `track.type`: selects the concrete track implementation. The current
+  speedway value is `oval`; the factory also accepts `speedway` as an alias.
+- `track_type`: selects the Hill Circuit implementation in the road-course
+  config.
 - `geometry.straight_length_m` and `corner_radius_m`: determine lap shape and
   centerline length
-- `geometry.road_width_m` and `apron_width_m`: surface-zone widths
+- `geometry.road_width_m` and `apron_width_m`: physics surface-zone widths.
+  The default oval uses a 16.764 m average IMS racing surface and a 6.096 m
+  apron.
+- `geometry.straight_road_width_m` and `geometry.turn_road_width_m`: render-only
+  oval visual road widths. The default IMS values are 15.240 m straights and
+  18.288 m turns; surface classification still uses `road_width_m`.
 - `geometry.outer_wall_gap_m` and `inner_wall_gap_m`: wall positions outside
   the racing surface; the inner gap creates the visible infield grass runout
 - `geometry.banking_degrees`: maximum rendered corner banking
 - `geometry.bank_transition_runout_m`: easement distance before/after turn
-  entry and exit; the default 50 m uses quintic smoothing to avoid banking
-  humps
-- `geometry.bank_transition_fraction`: retained legacy value; the current
-  easement model is controlled by `bank_transition_runout_m`
-- `surfaces.*_grip_multiplier`: scales available lateral tire force
+  entry and exit; the default IMS 91.44 m uses quintic smoothing to spread the
+  banking transition over roughly 300 ft
+- `geometry.bank_transition_fraction`: retained legacy value and set to 0.09
+  for IMS consistency; the current easement model is controlled by
+  `bank_transition_runout_m`
+- `geometry.pit_lane_*`, `geometry.pit_box_*`, `geometry.pit_wall_height_m`,
+  and `geometry.yard_of_bricks_*`: render-only oval frontstretch settings for
+  pit lane asphalt, pit wall, pit box markings, garage massing, and the brick
+  start/finish strip
+- `checkpoints_m`: ordered oval checkpoint marker distances; the first value is
+  the start/finish timing origin. The default set is
+  `[304.8, 1310.64, 2316.48, 3322.32]`. Oval distance zero is the center of
+  the front straight, so the first gate is 304.8 m forward from its center.
+- `surfaces.*_grip_multiplier`: scales available lateral tire force. The
+  simulator samples surface type per wheel contact patch, so a car straddling
+  the apron/asphalt boundary gets asymmetric grip instead of one car-wide
+  multiplier.
+- `surfaces.apron_grip_multiplier` and `surfaces.apron_resistance_multiplier`:
+  tune the sealed IMS apron as a usable alternate line; defaults are 0.92 grip
+  and 1.25 rolling resistance
 - `surfaces.grass_longitudinal_grip_multiplier`: scales grass drive/brake tire
   force separately from lateral grip so the car can accelerate out of grass
   without giving the grass asphalt-like cornering grip
-- `surfaces.*_resistance_multiplier`: scales rolling resistance
+- `surfaces.*_resistance_multiplier`: scales per-wheel rolling resistance.
+  Grass defaults to high but escapable resistance, with extra speed-sensitive
+  grass-trap damping in `RaceSession` reduced so low-speed throttle can pull
+  the car back to the racing surface.
+- `terrain.terrain_height_enabled`: enables deterministic per-wheel contact
+  height, road normal, roughness, and curb-height sampling. Disable this to
+  return vehicle physics to the old smooth local road plane while leaving
+  surface grip/resistance classification unchanged.
+- `terrain.asphalt_roughness_m`: clean-asphalt procedural micro height.
+  Defaults are intentionally subtle, in the 3-8 mm range.
+- `terrain.oval_seam_amp_m`: oval asphalt/apron and edge seam bump amplitude.
+  Higher values make the inside-edge transition and visual pavement seams more
+  active through the tire vertical spring.
+- `terrain.oval_undulation_amp_m`: low-frequency oval asphalt waviness over
+  long wavelengths. Keep this small to avoid artificial chassis shake.
+- `terrain.curb_height_m`: peak procedural curb height on Hill Circuit curb
+  strips. The profile is filtered and rumble-shaped by distance along the
+  track.
+- `terrain.contact_height_filter_tau_s`: first-order contact-height smoothing
+  inside `Vehicle::step`. Smaller values make seams/curbs sharper; larger
+  values reduce buzz and protect the 360 Hz suspension integration.
 - `barrier.restitution`: controls how much outward wall velocity rebounds
 - `render.segments`: procedural oval mesh resolution
 
-Leaving asphalt invalidates the current timed lap.
+Hill Circuit-specific fields:
+
+- `lap_length_m`, `spawn_distance_m`, and `checkpoints`: define road-course lap
+  timing and spawn state.
+- `elevation_spine`: distance/elevation control points for the cubic height
+  profile; the track derives road pitch from this spline.
+- `curb_width_m` and `runoff_width_m`: define curb and grass bands outside the
+  12 m asphalt road.
+- `surface_curb.*`: curb lateral grip, longitudinal grip, and rumble-like
+  rolling resistance. Curbs do not invalidate laps.
+- `surface_grass.*`: road-course grass grip and resistance values.
+
+Leaving asphalt invalidates the current timed lap except for curb use.

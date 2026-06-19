@@ -35,6 +35,13 @@ struct Vertex {
 };
 static_assert(sizeof(Vertex) == 64);
 
+struct ShadowGroundChunk {
+    std::uint32_t vertexStart = 0U;
+    std::uint32_t vertexCount = 0U;
+    Vec3 minimum{};
+    Vec3 maximum{};
+};
+
 struct Uniforms {
     float mvp[16];
     float model[16];
@@ -65,6 +72,7 @@ constexpr float kMaterialSmoke = 13.0F;
 constexpr float kMaterialSpark = 14.0F;
 constexpr float kMaterialSkidmark = 15.0F;
 constexpr float kMaterialVisor = 16.0F;
+constexpr float kMaterialBrick = 17.0F;
 
 constexpr float kVisualFrontWheelX = 0.84F;
 constexpr float kVisualRearWheelX = 0.80F;
@@ -79,7 +87,8 @@ constexpr std::size_t kMaxSteeringDisplayVertices = 512U;
 constexpr std::size_t kMaxUiVertices = 7200U;
 constexpr std::size_t kMaxSmokeVertices = 144U;
 constexpr std::size_t kMaxSuspensionVertices = 900U;
-constexpr std::size_t kMaxSkidmarkVertices = 3072U;
+constexpr std::size_t kMaxSkidmarkVertices = 2048U;
+constexpr std::size_t kSkidmarkVerticesPerMark = 12U;
 using Glyph = std::array<unsigned char, 7>;
 
 Glyph glyphFor(char character) {
@@ -208,6 +217,27 @@ ClipPoint transformPoint(const Mat4& matrix, Vec3 point) {
         matrix.values[3] * point.x + matrix.values[7] * point.y +
             matrix.values[11] * point.z + matrix.values[15],
     };
+}
+
+bool intersectsShadowFrustum(const ShadowGroundChunk& chunk, const Mat4& shadowViewProjection) {
+    std::array<ClipPoint, 8> corners{};
+    std::size_t cornerIndex = 0U;
+    for (const float x : {chunk.minimum.x, chunk.maximum.x}) {
+        for (const float y : {chunk.minimum.y, chunk.maximum.y}) {
+            for (const float z : {chunk.minimum.z, chunk.maximum.z}) {
+                corners[cornerIndex++] = transformPoint(shadowViewProjection, {x, y, z});
+            }
+        }
+    }
+    const auto allOutside = [&](const auto& predicate) {
+        return std::all_of(corners.begin(), corners.end(), predicate);
+    };
+    return !allOutside([](const ClipPoint& point) { return point.x < -point.w; }) &&
+           !allOutside([](const ClipPoint& point) { return point.x > point.w; }) &&
+           !allOutside([](const ClipPoint& point) { return point.y < -point.w; }) &&
+           !allOutside([](const ClipPoint& point) { return point.y > point.w; }) &&
+           !allOutside([](const ClipPoint& point) { return point.z < 0.0F; }) &&
+           !allOutside([](const ClipPoint& point) { return point.z > point.w; });
 }
 
 void appendQuad(
@@ -376,11 +406,12 @@ Vec3 pointAtTrackOffset(
     float lateralOffsetM,
     float verticalOffsetM = 0.0F,
     float forwardOffsetM = 0.0F) {
-    float heightOffset = lateralOffsetM + pose.roadHalfWidthM;
-    if (lateralOffsetM < -pose.roadHalfWidthM) {
-        heightOffset = 0.0F;
-    }
-    const float heightY = heightOffset * std::tan(pose.bankRadians) + verticalOffsetM;
+    const float insideEdgeHeight = pose.centerHeightM - pose.roadHalfWidthM * std::tan(pose.bankRadians);
+    const float heightY =
+        (lateralOffsetM < -pose.roadHalfWidthM
+             ? insideEdgeHeight
+             : pose.centerHeightM + lateralOffsetM * std::tan(pose.bankRadians)) +
+        verticalOffsetM;
     return {
         pose.centerX + pose.rightX * lateralOffsetM + pose.tangentX * forwardOffsetM,
         heightY,
@@ -413,14 +444,79 @@ void appendTrackStrip(
     vertices.push_back(makeVertex(d.x, d.y, d.z, color, normal, material, tangent, innerLateralV));
 }
 
+void appendTrackStripVariable(
+    std::vector<Vertex>& vertices,
+    const TrackPose& start,
+    const TrackPose& end,
+    float startInnerOffsetM,
+    float startOuterOffsetM,
+    float endInnerOffsetM,
+    float endOuterOffsetM,
+    float verticalOffsetM,
+    std::array<float, 4> color,
+    float material = kMaterialDefault,
+    float startInnerLateralV = 0.0F,
+    float startOuterLateralV = 0.0F,
+    float endInnerLateralV = 0.0F,
+    float endOuterLateralV = 0.0F) {
+    const Vec3 a = pointAtTrackOffset(start, startInnerOffsetM, verticalOffsetM);
+    const Vec3 b = pointAtTrackOffset(start, startOuterOffsetM, verticalOffsetM);
+    const Vec3 c = pointAtTrackOffset(end, endOuterOffsetM, verticalOffsetM);
+    const Vec3 d = pointAtTrackOffset(end, endInnerOffsetM, verticalOffsetM);
+    const Vec3 normal = normalize(cross(subtract(c, a), subtract(b, a)));
+    const Vec3 tangent = normalize(subtract(b, a));
+    vertices.push_back(makeVertex(a.x, a.y, a.z, color, normal, material, tangent, startInnerLateralV));
+    vertices.push_back(makeVertex(b.x, b.y, b.z, color, normal, material, tangent, startOuterLateralV));
+    vertices.push_back(makeVertex(c.x, c.y, c.z, color, normal, material, tangent, endOuterLateralV));
+    vertices.push_back(makeVertex(a.x, a.y, a.z, color, normal, material, tangent, startInnerLateralV));
+    vertices.push_back(makeVertex(c.x, c.y, c.z, color, normal, material, tangent, endOuterLateralV));
+    vertices.push_back(makeVertex(d.x, d.y, d.z, color, normal, material, tangent, endInnerLateralV));
+}
+
+float ovalCornerBlendFactor(const OvalTrack& track, float distanceM) {
+    const TrackConfig& config = track.config();
+    const float distance = std::fmod(distanceM + track.lapLengthM(), track.lapLengthM());
+    const float cornerLength = std::numbers::pi_v<float> * 0.5F * config.cornerRadiusM;
+    const float frontFirstEnd = track.halfStraightLengthM();
+    const float turn4End = frontFirstEnd + cornerLength;
+    const float northChuteEnd = turn4End + config.shortChuteLengthM;
+    const float turn3End = northChuteEnd + cornerLength;
+    const float backStretchEnd = turn3End + config.straightLengthM;
+    const float turn2End = backStretchEnd + cornerLength;
+    const float southChuteEnd = turn2End + config.shortChuteLengthM;
+    const float turn1End = southChuteEnd + cornerLength;
+    const float runout = std::clamp(config.bankTransitionRunoutM, 1.0F, cornerLength * 0.49F);
+    const float transitionLength = runout * 2.0F;
+    const auto smoothStep5Local = [](float value) {
+        const float clamped = std::clamp(value, 0.0F, 1.0F);
+        return clamped * clamped * clamped * (clamped * (clamped * 6.0F - 15.0F) + 10.0F);
+    };
+    const auto cornerBlend = [&](float entry, float exit) {
+        const float rampIn = smoothStep5Local((distance - (entry - runout)) / transitionLength);
+        const float rampOut = 1.0F - smoothStep5Local((distance - (exit - runout)) / transitionLength);
+        return std::clamp(rampIn * rampOut, 0.0F, 1.0F);
+    };
+    return std::max(
+        std::max(cornerBlend(frontFirstEnd, turn4End), cornerBlend(northChuteEnd, turn3End)),
+        std::max(cornerBlend(backStretchEnd, turn2End), cornerBlend(southChuteEnd, turn1End)));
+}
+
+float ovalRenderHalfRoadWidth(const OvalTrack& track, float distanceM) {
+    const TrackConfig& config = track.config();
+    const float straightWidth = config.straightRoadWidthM > 0.0F ? config.straightRoadWidthM : config.roadWidthM;
+    const float turnWidth = config.turnRoadWidthM > 0.0F ? config.turnRoadWidthM : config.roadWidthM;
+    const float blend = ovalCornerBlendFactor(track, distanceM);
+    return 0.5F * (straightWidth + (turnWidth - straightWidth) * blend);
+}
+
 void appendTrackMarker(
     std::vector<Vertex>& vertices,
-    const Track& track,
+    const OvalTrack& track,
     float distanceM,
     std::array<float, 4> color,
     float material = kMaterialTrackPaint) {
     const TrackPose pose = track.poseAtDistance(distanceM);
-    const float halfWidth = track.roadHalfWidthM();
+    const float halfWidth = ovalRenderHalfRoadWidth(track, distanceM);
     constexpr float halfLength = 0.45F;
     constexpr float markerHeight = 0.055F;
     appendQuad(
@@ -433,9 +529,10 @@ void appendTrackMarker(
         material);
 }
 
-void appendStartFinishChecker(std::vector<Vertex>& vertices, const Track& track) {
-    const TrackPose pose = track.poseAtDistance(0.0F);
-    const float halfWidth = track.roadHalfWidthM();
+void appendStartFinishChecker(std::vector<Vertex>& vertices, const OvalTrack& track) {
+    const float startFinishDistanceM = track.config().yardOfBricksPositionM;
+    const TrackPose pose = track.poseAtDistance(startFinishDistanceM);
+    const float halfWidth = ovalRenderHalfRoadWidth(track, startFinishDistanceM);
     constexpr int columns = 12;
     constexpr int rows = 2;
     constexpr float markerHeight = 0.06F;
@@ -495,6 +592,68 @@ void appendTrackOrientedBox(
     appendQuad(vertices, p101, p100, p110, p111, color, material);
     appendQuad(vertices, p010, p011, p111, p110, color, material);
     appendQuad(vertices, p000, p100, p101, p001, color, material);
+}
+
+void appendTrackOrientedTaperedBox(
+    std::vector<Vertex>& vertices,
+    const TrackPose& pose,
+    float lateralCenterM,
+    float verticalCenterM,
+    float bottomForwardHalfM,
+    float bottomLateralHalfM,
+    float topForwardHalfM,
+    float topLateralHalfM,
+    float verticalHalfM,
+    std::array<float, 4> color,
+    float material = kMaterialDefault) {
+    const auto bottomCorner = [&](float lateral, float forward) {
+        return pointAtTrackOffset(
+            pose,
+            lateralCenterM + lateral * bottomLateralHalfM,
+            verticalCenterM - verticalHalfM,
+            forward * bottomForwardHalfM);
+    };
+    const auto topCorner = [&](float lateral, float forward) {
+        return pointAtTrackOffset(
+            pose,
+            lateralCenterM + lateral * topLateralHalfM,
+            verticalCenterM + verticalHalfM,
+            forward * topForwardHalfM);
+    };
+    const Vec3 b00 = bottomCorner(-1.0F, -1.0F);
+    const Vec3 b01 = bottomCorner(-1.0F, 1.0F);
+    const Vec3 b10 = bottomCorner(1.0F, -1.0F);
+    const Vec3 b11 = bottomCorner(1.0F, 1.0F);
+    const Vec3 t00 = topCorner(-1.0F, -1.0F);
+    const Vec3 t01 = topCorner(-1.0F, 1.0F);
+    const Vec3 t10 = topCorner(1.0F, -1.0F);
+    const Vec3 t11 = topCorner(1.0F, 1.0F);
+    appendQuad(vertices, b01, b11, t11, t01, color, material);
+    appendQuad(vertices, b10, b00, t00, t10, color, material);
+    appendQuad(vertices, b00, b01, t01, t00, color, material);
+    appendQuad(vertices, b11, b10, t10, t11, color, material);
+    appendQuad(vertices, t00, t01, t11, t10, color, material);
+    appendQuad(vertices, b00, b10, b11, b01, color, material);
+}
+
+void appendTrackFacePanel(
+    std::vector<Vertex>& vertices,
+    const TrackPose& pose,
+    float lateralOffsetM,
+    float forwardCenterM,
+    float forwardHalfM,
+    float bottomM,
+    float topM,
+    std::array<float, 4> color,
+    float material = kMaterialDefault) {
+    appendQuad(
+        vertices,
+        pointAtTrackOffset(pose, lateralOffsetM, bottomM, forwardCenterM - forwardHalfM),
+        pointAtTrackOffset(pose, lateralOffsetM, bottomM, forwardCenterM + forwardHalfM),
+        pointAtTrackOffset(pose, lateralOffsetM, topM, forwardCenterM + forwardHalfM),
+        pointAtTrackOffset(pose, lateralOffsetM, topM, forwardCenterM - forwardHalfM),
+        color,
+        material);
 }
 
 void appendTrackVerticalBand(
@@ -673,7 +832,7 @@ void appendGrandstandSection(
         kMaterialMetal);
 }
 
-void appendGrandstands(std::vector<Vertex>& vertices, const Track& track) {
+void appendGrandstands(std::vector<Vertex>& vertices, const OvalTrack& track) {
     const TrackConfig& config = track.config();
     const float halfStraight = track.halfStraightLengthM();
     const float quarterCorner = std::numbers::pi_v<float> * 0.5F * config.cornerRadiusM;
@@ -681,13 +840,384 @@ void appendGrandstands(std::vector<Vertex>& vertices, const Track& track) {
         halfStraight + 2.0F * quarterCorner + config.shortChuteLengthM;
     const float sectionSpacing = 42.0F;
 
-    for (float z = -halfStraight + 95.0F; z <= halfStraight - 95.0F; z += sectionSpacing) {
+    for (float z = -halfStraight + 24.0F; z <= halfStraight - 24.0F; z += sectionSpacing) {
         const float distance = z >= 0.0F ? z : track.lapLengthM() + z;
         appendGrandstandSection(vertices, track.poseAtDistance(distance), track.outerWallOffsetM());
     }
     for (float z = halfStraight - 95.0F; z >= -halfStraight + 95.0F; z -= sectionSpacing) {
         const float distance = backStraightStart + (halfStraight - z);
         appendGrandstandSection(vertices, track.poseAtDistance(distance), track.outerWallOffsetM());
+    }
+}
+
+TrackPose flatOvalPoseAt(const OvalTrack& track, float distanceM) {
+    TrackPose pose = track.poseAtDistance(distanceM);
+    pose.bankRadians = 0.0F;
+    pose.centerHeightM = 0.0F;
+    pose.roadHalfWidthM = ovalRenderHalfRoadWidth(track, distanceM);
+    return pose;
+}
+
+bool ovalDistanceOverlaps(float segmentStartM, float segmentEndM, float rangeStartM, float rangeEndM) {
+    return segmentEndM >= rangeStartM && segmentStartM <= rangeEndM;
+}
+
+void appendPitBoundaryLine(
+    std::vector<Vertex>& vertices,
+    const OvalTrack& track,
+    float distanceM,
+    float lateralStartM,
+    float lateralEndM,
+    std::array<float, 4> color) {
+    const TrackPose pose = flatOvalPoseAt(track, distanceM);
+    constexpr float halfLength = 0.060F;
+    constexpr float markerHeight = 0.030F;
+    appendQuad(
+        vertices,
+        pointAtTrackOffset(pose, lateralStartM, markerHeight, -halfLength),
+        pointAtTrackOffset(pose, lateralEndM, markerHeight, -halfLength),
+        pointAtTrackOffset(pose, lateralEndM, markerHeight, halfLength),
+        pointAtTrackOffset(pose, lateralStartM, markerHeight, halfLength),
+        color,
+        kMaterialTrackPaint);
+}
+
+void appendPitLaneComplex(std::vector<Vertex>& vertices, const OvalTrack& track) {
+    const TrackConfig& config = track.config();
+    if (config.pitLaneWidthM <= 0.1F || config.pitLaneEndM <= config.pitLaneStartM + 1.0F) {
+        return;
+    }
+
+    const float straightHalfRoad = 0.5F * (config.straightRoadWidthM > 0.0F ? config.straightRoadWidthM : config.roadWidthM);
+    const float apronInnerEdge = -straightHalfRoad - config.apronWidthM;
+    const float pitWallOffset = apronInnerEdge - config.innerWallGapM;
+    const float pitOuterEdge = -straightHalfRoad - config.apronWidthM - config.pitLaneOffsetM;
+    const float pitInnerEdge = pitOuterEdge - config.pitLaneWidthM;
+    const float pitBoxInnerEdge = std::max(pitInnerEdge + 0.35F, pitOuterEdge - config.pitBoxDepthM);
+    const float pitStart = config.pitLaneStartM;
+    const float pitEnd = std::min(config.pitLaneEndM, track.halfStraightLengthM() - 2.0F);
+    const float pitLength = pitEnd - pitStart;
+    const int pitSegments = std::max(12, static_cast<int>(std::ceil(pitLength / 16.0F)));
+
+    const std::array<float, 4> pitAsphalt{0.135F, 0.138F, 0.140F, 1.0F};
+    const std::array<float, 4> concrete{0.74F, 0.735F, 0.70F, 1.0F};
+    const std::array<float, 4> concreteDark{0.42F, 0.43F, 0.42F, 1.0F};
+    const std::array<float, 4> paint{0.94F, 0.93F, 0.86F, 1.0F};
+    const std::array<float, 4> garageFace{0.34F, 0.35F, 0.34F, 1.0F};
+    const std::array<float, 4> garageTop{0.50F, 0.50F, 0.48F, 1.0F};
+
+    for (int segment = 0; segment < pitSegments; ++segment) {
+        const float t0 = static_cast<float>(segment) / static_cast<float>(pitSegments);
+        const float t1 = static_cast<float>(segment + 1) / static_cast<float>(pitSegments);
+        const float startDistance = pitStart + pitLength * t0;
+        const float endDistance = pitStart + pitLength * t1;
+        const TrackPose start = flatOvalPoseAt(track, startDistance);
+        const TrackPose end = flatOvalPoseAt(track, endDistance);
+        appendTrackStrip(
+            vertices,
+            start,
+            end,
+            pitInnerEdge,
+            pitOuterEdge,
+            0.010F,
+            pitAsphalt,
+            kMaterialAsphalt,
+            -0.95F,
+            -0.48F);
+        appendTrackVerticalBand(vertices, start, end, pitWallOffset, 0.0F, config.pitWallHeightM, concrete, kMaterialConcrete);
+        appendTrackStrip(
+            vertices,
+            start,
+            end,
+            pitWallOffset - 0.20F,
+            pitWallOffset + 0.20F,
+            config.pitWallHeightM,
+            concrete,
+            kMaterialConcrete,
+            -0.55F,
+            -0.50F);
+    }
+
+    const TrackPose entryStart = flatOvalPoseAt(track, std::max(0.0F, pitStart - 30.0F));
+    const TrackPose entryEnd = flatOvalPoseAt(track, pitStart);
+    appendTrackStripVariable(
+        vertices,
+        entryStart,
+        entryEnd,
+        apronInnerEdge,
+        apronInnerEdge,
+        pitInnerEdge,
+        pitOuterEdge,
+        0.012F,
+        pitAsphalt,
+        kMaterialAsphalt,
+        -0.50F,
+        -0.50F,
+        -0.95F,
+        -0.48F);
+    const TrackPose exitStart = flatOvalPoseAt(track, pitEnd);
+    const TrackPose exitEnd = flatOvalPoseAt(track, pitEnd + 40.0F);
+    appendTrackStripVariable(
+        vertices,
+        exitStart,
+        exitEnd,
+        pitInnerEdge,
+        pitOuterEdge,
+        apronInnerEdge,
+        apronInnerEdge,
+        0.012F,
+        pitAsphalt,
+        kMaterialAsphalt,
+        -0.95F,
+        -0.48F,
+        -0.50F,
+        -0.50F);
+
+    appendTrackStrip(
+        vertices,
+        flatOvalPoseAt(track, pitStart),
+        flatOvalPoseAt(track, pitEnd),
+        pitBoxInnerEdge,
+        pitBoxInnerEdge + 0.080F,
+        0.032F,
+        paint,
+        kMaterialTrackPaint,
+        -0.78F,
+        -0.76F);
+    appendTrackStrip(
+        vertices,
+        flatOvalPoseAt(track, pitStart),
+        flatOvalPoseAt(track, pitEnd),
+        pitOuterEdge - 0.070F,
+        pitOuterEdge,
+        0.032F,
+        paint,
+        kMaterialTrackPaint,
+        -0.56F,
+        -0.54F);
+
+    const float pitBoxSpacing = pitLength / static_cast<float>(std::max(1, config.pitBoxCount));
+    for (int box = 0; box <= config.pitBoxCount; ++box) {
+        appendPitBoundaryLine(vertices, track, pitStart + pitBoxSpacing * static_cast<float>(box), pitBoxInnerEdge, pitOuterEdge, paint);
+    }
+
+    const TrackPose garagePose = flatOvalPoseAt(track, (pitStart + pitEnd) * 0.5F);
+    appendTrackOrientedBox(
+        vertices,
+        garagePose,
+        pitInnerEdge - 4.25F,
+        2.25F,
+        pitLength * 0.5F,
+        4.0F,
+        2.25F,
+        garageTop,
+        kMaterialConcrete);
+    appendTrackVerticalBand(
+        vertices,
+        flatOvalPoseAt(track, pitStart),
+        flatOvalPoseAt(track, pitEnd),
+        pitInnerEdge - 0.20F,
+        0.20F,
+        3.80F,
+        garageFace,
+        kMaterialConcrete);
+
+    for (float distance = pitStart + 24.0F; distance <= pitEnd - 20.0F; distance += 42.0F) {
+        const TrackPose pose = flatOvalPoseAt(track, distance);
+        constexpr float sectionHalfLength = 17.0F;
+        const float firstRow = pitInnerEdge - 12.0F;
+        appendTrackOrientedBox(vertices, pose, firstRow - 5.2F, 0.30F, sectionHalfLength, 7.2F, 0.24F, concreteDark, kMaterialConcrete);
+        for (int row = 0; row < 8; ++row) {
+            const float lateral = firstRow - static_cast<float>(row) * 1.72F;
+            const float height = 0.82F + static_cast<float>(row) * 0.54F;
+            appendTrackOrientedBox(
+                vertices,
+                pose,
+                lateral,
+                height,
+                sectionHalfLength,
+                0.64F,
+                0.08F,
+                row % 2 == 0 ? std::array<float, 4>{0.22F, 0.25F, 0.30F, 1.0F}
+                             : std::array<float, 4>{0.30F, 0.30F, 0.30F, 1.0F},
+                kMaterialCrowd);
+        }
+        appendTrackOrientedBox(vertices, pose, firstRow - 13.6F, 4.9F, sectionHalfLength, 0.16F, 4.2F, concreteDark, kMaterialConcrete);
+    }
+}
+
+void appendYardOfBricks(std::vector<Vertex>& vertices, const OvalTrack& track) {
+    const TrackConfig& config = track.config();
+    if (config.yardOfBricksWidthM <= 0.01F) {
+        return;
+    }
+    const float halfRoad = ovalRenderHalfRoadWidth(track, config.yardOfBricksPositionM);
+    const float innerOffset = -halfRoad - config.apronWidthM;
+    const float outerOffset = halfRoad;
+    const TrackPose pose = track.poseAtDistance(config.yardOfBricksPositionM);
+    const float halfLength = config.yardOfBricksWidthM * 0.5F;
+    appendQuad(
+        vertices,
+        pointAtTrackOffset(pose, innerOffset, 0.068F, -halfLength),
+        pointAtTrackOffset(pose, outerOffset, 0.068F, -halfLength),
+        pointAtTrackOffset(pose, outerOffset, 0.068F, halfLength),
+        pointAtTrackOffset(pose, innerOffset, 0.068F, halfLength),
+        {0.55F, 0.28F, 0.18F, 1.0F},
+        kMaterialBrick);
+}
+
+void appendPagodaScoringTower(std::vector<Vertex>& vertices, const OvalTrack& track) {
+    const TrackPose pose = track.poseAtDistance(180.0F);
+    const float towerLateral = track.innerBarrierOffsetM() - 22.0F;
+    const std::array<float, 4> limestone{0.68F, 0.65F, 0.56F, 1.0F};
+    const std::array<float, 4> limestoneDark{0.39F, 0.37F, 0.32F, 1.0F};
+    const std::array<float, 4> glass{0.035F, 0.13F, 0.18F, 1.0F};
+    const std::array<float, 4> glassLight{0.10F, 0.28F, 0.34F, 1.0F};
+    const std::array<float, 4> roof{0.52F, 0.055F, 0.030F, 1.0F};
+    const std::array<float, 4> roofTrim{0.18F, 0.018F, 0.014F, 1.0F};
+    const std::array<float, 4> steel{0.46F, 0.48F, 0.49F, 1.0F};
+    const std::array<float, 4> board{0.022F, 0.025F, 0.028F, 1.0F};
+    constexpr float towerMaterial = kMaterialDefault;
+
+    appendTrackOrientedBox(
+        vertices, pose, towerLateral, 0.32F, 13.5F, 8.2F, 0.32F, limestoneDark, towerMaterial);
+    appendTrackOrientedBox(
+        vertices, pose, towerLateral, 0.96F, 11.5F, 7.0F, 0.28F, limestone, towerMaterial);
+    appendTrackOrientedBox(
+        vertices, pose, towerLateral, 1.62F, 8.8F, 4.7F, 0.42F, glass, towerMaterial);
+
+    for (int level = 0; level < 7; ++level) {
+        const float y = 3.05F + static_cast<float>(level) * 3.05F;
+        const float scale = 1.0F - static_cast<float>(level) * 0.055F;
+        const float forwardHalf = 7.7F * scale;
+        const float lateralHalf = 4.25F * scale;
+        const float faceLateral = towerLateral + lateralHalf + 0.035F;
+
+        appendTrackOrientedBox(
+            vertices,
+            pose,
+            towerLateral,
+            y,
+            forwardHalf,
+            lateralHalf,
+            0.88F,
+            level % 2 == 0 ? glass : glassLight,
+            towerMaterial);
+        appendTrackOrientedBox(
+            vertices,
+            pose,
+            towerLateral - lateralHalf + 0.28F,
+            y,
+            forwardHalf,
+            0.20F,
+            1.02F,
+            limestone,
+            towerMaterial);
+        appendTrackOrientedBox(
+            vertices,
+            pose,
+            towerLateral + lateralHalf - 0.28F,
+            y,
+            forwardHalf,
+            0.20F,
+            1.02F,
+            limestone,
+            towerMaterial);
+        appendTrackFacePanel(
+            vertices,
+            pose,
+            faceLateral,
+            0.0F,
+            forwardHalf * 0.70F,
+            y - 0.50F,
+            y + 0.50F,
+            {0.18F, 0.36F, 0.42F, 1.0F},
+            towerMaterial);
+
+        appendTrackOrientedBox(
+            vertices,
+            pose,
+            towerLateral,
+            y + 0.98F,
+            forwardHalf + 1.35F,
+            lateralHalf + 1.05F,
+            0.12F,
+            roofTrim,
+            towerMaterial);
+        appendTrackOrientedTaperedBox(
+            vertices,
+            pose,
+            towerLateral,
+            y + 1.28F,
+            forwardHalf + 1.65F,
+            lateralHalf + 1.35F,
+            forwardHalf + 0.50F,
+            lateralHalf + 0.42F,
+            0.30F,
+            roof,
+            towerMaterial);
+    }
+
+    appendTrackOrientedBox(
+        vertices, pose, towerLateral, 25.3F, 5.1F, 2.65F, 1.15F, glassLight, towerMaterial);
+    appendTrackOrientedTaperedBox(
+        vertices, pose, towerLateral, 26.75F, 6.8F, 4.1F, 3.2F, 2.0F, 0.60F, roof, towerMaterial);
+    appendTrackOrientedBox(
+        vertices, pose, towerLateral, 27.45F, 2.4F, 1.0F, 0.40F, roofTrim, towerMaterial);
+
+    const float pylonLateral = track.innerBarrierOffsetM() - 7.4F;
+    appendTrackOrientedBox(
+        vertices, pose, pylonLateral, 13.2F, 0.82F, 0.50F, 12.8F, board, towerMaterial);
+    for (int slot = 0; slot < 12; ++slot) {
+        const float bottom = 2.35F + static_cast<float>(slot) * 1.72F;
+        const std::array<float, 4> panelColor =
+            slot % 5 == 0 ? std::array<float, 4>{0.90F, 0.70F, 0.16F, 1.0F}
+                          : slot % 3 == 0 ? std::array<float, 4>{0.14F, 0.58F, 0.22F, 1.0F}
+                                           : std::array<float, 4>{0.86F, 0.88F, 0.82F, 1.0F};
+        appendTrackFacePanel(
+            vertices,
+            pose,
+            pylonLateral + 0.52F,
+            0.0F,
+            0.58F,
+            bottom,
+            bottom + 1.05F,
+            panelColor,
+            towerMaterial);
+        appendTrackFacePanel(
+            vertices,
+            pose,
+            pylonLateral + 0.535F,
+            -0.30F,
+            0.10F,
+            bottom + 0.25F,
+            bottom + 0.82F,
+            board,
+            towerMaterial);
+    }
+
+    const Vec3 mastBase = pointAtTrackOffset(pose, towerLateral, 27.7F);
+    const Vec3 mastTop = pointAtTrackOffset(pose, towerLateral, 35.0F);
+    appendRod(vertices, mastBase, mastTop, 0.055F, steel, towerMaterial);
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 5; ++column) {
+            const float f0 = 0.35F + static_cast<float>(column) * 0.55F;
+            const float f1 = f0 + 0.55F;
+            const float y0 = 32.6F + static_cast<float>(row) * 0.38F;
+            const float y1 = y0 + 0.38F;
+            const bool bright = ((row + column) % 2) == 0;
+            appendTrackFacePanel(
+                vertices,
+                pose,
+                towerLateral + 0.08F,
+                (f0 + f1) * 0.5F,
+                (f1 - f0) * 0.5F,
+                y0,
+                y1,
+                bright ? std::array<float, 4>{0.94F, 0.94F, 0.88F, 1.0F}
+                       : std::array<float, 4>{0.025F, 0.028F, 0.030F, 1.0F},
+                towerMaterial);
+        }
     }
 }
 
@@ -704,7 +1234,7 @@ std::vector<Vertex> makeSkyGeometry() {
     return vertices;
 }
 
-std::vector<Vertex> makeGroundGeometry(const Track& track) {
+std::vector<Vertex> makeGroundGeometry(const OvalTrack& track) {
     std::vector<Vertex> vertices;
     const TrackConfig& config = track.config();
     const int segments = config.renderSegments;
@@ -724,10 +1254,9 @@ std::vector<Vertex> makeGroundGeometry(const Track& track) {
         {0.055F, 0.22F, 0.085F, 1.0F},
         kMaterialGrass);
 
-    const float halfRoad = track.roadHalfWidthM();
-    const float innerApron = -halfRoad - config.apronWidthM;
-    const float wallOffset = track.outerWallOffsetM();
-    const float innerWallOffset = track.innerBarrierOffsetM();
+    const float maxHalfRoad = 0.5F * std::max({config.roadWidthM, config.straightRoadWidthM, config.turnRoadWidthM});
+    const float wallOffset = maxHalfRoad + config.outerWallGapM;
+    const float innerWallOffset = -(maxHalfRoad + config.apronWidthM + config.innerWallGapM);
     const float lapLength = track.lapLengthM();
     const auto lateralV = [&](float lateralOffsetM) {
         const float t = (lateralOffsetM - innerWallOffset) / std::max(wallOffset - innerWallOffset, 0.001F);
@@ -745,54 +1274,78 @@ std::vector<Vertex> makeGroundGeometry(const Track& track) {
             lapLength * static_cast<float>(segment + 1) / static_cast<float>(segments);
         const TrackPose start = track.poseAtDistance(startDistance);
         const TrackPose end = track.poseAtDistance(endDistance);
+        const float startHalfRoad = ovalRenderHalfRoadWidth(track, startDistance);
+        const float endHalfRoad = ovalRenderHalfRoadWidth(track, endDistance);
+        const float startInnerApron = -startHalfRoad - config.apronWidthM;
+        const float endInnerApron = -endHalfRoad - config.apronWidthM;
+        const float startWallOffset = startHalfRoad + config.outerWallGapM;
+        const float endWallOffset = endHalfRoad + config.outerWallGapM;
+        const float startInnerWallOffset = -startHalfRoad - config.apronWidthM - config.innerWallGapM;
+        const float endInnerWallOffset = -endHalfRoad - config.apronWidthM - config.innerWallGapM;
 
-        appendTrackStrip(
+        appendTrackStripVariable(
             vertices,
             start,
             end,
-            -halfRoad,
-            halfRoad,
+            -startHalfRoad,
+            startHalfRoad,
+            -endHalfRoad,
+            endHalfRoad,
             0.0F,
             roadColor,
             kMaterialAsphalt,
-            lateralV(-halfRoad),
-            lateralV(halfRoad));
-        appendTrackStrip(
+            lateralV(-startHalfRoad),
+            lateralV(startHalfRoad),
+            lateralV(-endHalfRoad),
+            lateralV(endHalfRoad));
+        appendTrackStripVariable(
             vertices,
             start,
             end,
-            innerWallOffset,
-            innerApron,
+            startInnerWallOffset,
+            startInnerApron,
+            endInnerWallOffset,
+            endInnerApron,
             -0.012F,
             shoulderColor,
             kMaterialGrass,
-            lateralV(innerWallOffset),
-            lateralV(innerApron));
-        appendTrackStrip(
+            lateralV(startInnerWallOffset),
+            lateralV(startInnerApron),
+            lateralV(endInnerWallOffset),
+            lateralV(endInnerApron));
+        appendTrackStripVariable(
             vertices,
             start,
             end,
-            innerApron,
-            -halfRoad,
+            startInnerApron,
+            -startHalfRoad,
+            endInnerApron,
+            -endHalfRoad,
             0.005F,
             apronColor,
             kMaterialConcrete,
-            lateralV(innerApron),
-            lateralV(-halfRoad));
-        appendTrackStrip(
+            lateralV(startInnerApron),
+            lateralV(-startHalfRoad),
+            lateralV(endInnerApron),
+            lateralV(-endHalfRoad));
+        appendTrackStripVariable(
             vertices,
             start,
             end,
-            halfRoad,
-            wallOffset,
+            startHalfRoad,
+            startWallOffset,
+            endHalfRoad,
+            endWallOffset,
             -0.01F,
             shoulderColor,
             kMaterialGrass,
-            lateralV(halfRoad),
-            lateralV(wallOffset));
+            lateralV(startHalfRoad),
+            lateralV(startWallOffset),
+            lateralV(endHalfRoad),
+            lateralV(endWallOffset));
 
-        const Vec3 wallStart = pointAtTrackOffset(start, wallOffset, 0.0F);
-        const Vec3 wallEnd = pointAtTrackOffset(end, wallOffset, 0.0F);
+        const Vec3 wallStart = pointAtTrackOffset(start, startWallOffset, 0.0F);
+        const Vec3 wallEnd = pointAtTrackOffset(end, endWallOffset, 0.0F);
         appendQuad(
             vertices,
             wallStart,
@@ -801,27 +1354,169 @@ std::vector<Vertex> makeGroundGeometry(const Track& track) {
             {wallStart.x, wallStart.y + config.outerWallHeightM, wallStart.z},
             wallColor,
             kMaterialConcrete);
-        appendCatchFencePanel(vertices, start, end, wallOffset, config.outerWallHeightM, segment);
+        appendCatchFencePanel(vertices, start, end, (startWallOffset + endWallOffset) * 0.5F, config.outerWallHeightM, segment);
 
-        const Vec3 innerWallStart = pointAtTrackOffset(start, innerWallOffset, 0.0F);
-        const Vec3 innerWallEnd = pointAtTrackOffset(end, innerWallOffset, 0.0F);
-        appendQuad(
-            vertices,
-            innerWallEnd,
-            innerWallStart,
-            {innerWallStart.x, innerWallStart.y + config.outerWallHeightM, innerWallStart.z},
-            {innerWallEnd.x, innerWallEnd.y + config.outerWallHeightM, innerWallEnd.z},
-            wallColor,
-            kMaterialConcrete);
-        appendCatchFencePanel(vertices, start, end, innerWallOffset, config.outerWallHeightM, segment);
+        if (!ovalDistanceOverlaps(startDistance, endDistance, config.pitLaneStartM, config.pitLaneEndM)) {
+            const Vec3 innerWallStart = pointAtTrackOffset(start, startInnerWallOffset, 0.0F);
+            const Vec3 innerWallEnd = pointAtTrackOffset(end, endInnerWallOffset, 0.0F);
+            appendQuad(
+                vertices,
+                innerWallEnd,
+                innerWallStart,
+                {innerWallStart.x, innerWallStart.y + config.outerWallHeightM, innerWallStart.z},
+                {innerWallEnd.x, innerWallEnd.y + config.outerWallHeightM, innerWallEnd.z},
+                wallColor,
+                kMaterialConcrete);
+            appendCatchFencePanel(
+                vertices,
+                start,
+                end,
+                (startInnerWallOffset + endInnerWallOffset) * 0.5F,
+                config.outerWallHeightM,
+                segment);
+        }
     }
 
     appendStartFinishChecker(vertices, track);
-    appendTrackMarker(vertices, track, lapLength * 0.25F, {0.18F, 0.65F, 0.9F, 1.0F});
-    appendTrackMarker(vertices, track, lapLength * 0.5F, {0.18F, 0.65F, 0.9F, 1.0F});
-    appendTrackMarker(vertices, track, lapLength * 0.75F, {0.18F, 0.65F, 0.9F, 1.0F});
+    appendYardOfBricks(vertices, track);
+    for (const float checkpoint : config.checkpointsM) {
+        if (std::abs(checkpoint - config.yardOfBricksPositionM) > 0.01F) {
+            appendTrackMarker(vertices, track, checkpoint, {0.18F, 0.65F, 0.9F, 1.0F});
+        }
+    }
+    appendPitLaneComplex(vertices, track);
     appendGrandstands(vertices, track);
+    appendPagodaScoringTower(vertices, track);
     return vertices;
+}
+
+void appendGenericTrackMarker(
+    std::vector<Vertex>& vertices,
+    const TrackPose& pose,
+    float halfWidth,
+    std::array<float, 4> color,
+    float material = kMaterialTrackPaint) {
+    constexpr float halfLength = 0.80F;
+    constexpr float markerHeight = 0.055F;
+    appendQuad(
+        vertices,
+        pointAtTrackOffset(pose, -halfWidth, markerHeight, -halfLength),
+        pointAtTrackOffset(pose, halfWidth, markerHeight, -halfLength),
+        pointAtTrackOffset(pose, halfWidth, markerHeight, halfLength),
+        pointAtTrackOffset(pose, -halfWidth, markerHeight, halfLength),
+        color,
+        material);
+}
+
+std::vector<Vertex> makeGroundGeometry(const HillCircuitTrack& track) {
+    std::vector<Vertex> vertices;
+    const TrackConfig& config = track.config();
+    const int segments = std::max(720, config.renderSegments);
+    vertices.reserve(static_cast<std::size_t>(segments) * 120U + 12000U);
+
+    float minX = 0.0F;
+    float maxX = 0.0F;
+    float minZ = 0.0F;
+    float maxZ = 0.0F;
+    for (int segment = 0; segment < segments; ++segment) {
+        const TrackPose pose = track.poseAtDistance(
+            track.lapLengthM() * static_cast<float>(segment) / static_cast<float>(segments));
+        minX = std::min(minX, pose.centerX);
+        maxX = std::max(maxX, pose.centerX);
+        minZ = std::min(minZ, pose.centerZ);
+        maxZ = std::max(maxZ, pose.centerZ);
+    }
+    constexpr float terrainMargin = 190.0F;
+    appendQuad(
+        vertices,
+        {minX - terrainMargin, -0.10F, minZ - terrainMargin},
+        {maxX + terrainMargin, -0.10F, minZ - terrainMargin},
+        {maxX + terrainMargin, -0.10F, maxZ + terrainMargin},
+        {minX - terrainMargin, -0.10F, maxZ + terrainMargin},
+        {0.40F, 0.31F, 0.13F, 1.0F},
+        kMaterialGrass);
+
+    const float halfRoad = track.roadHalfWidthM();
+    const float curbOuter = track.curbOuterOffsetM();
+    const float barrier = track.barrierOffsetM();
+    const std::array<float, 4> roadColor{0.112F, 0.114F, 0.116F, 1.0F};
+    const std::array<float, 4> grassColor{0.48F, 0.38F, 0.16F, 1.0F};
+    const std::array<float, 4> curbRed{0.82F, 0.05F, 0.035F, 1.0F};
+    const std::array<float, 4> curbWhite{0.90F, 0.88F, 0.78F, 1.0F};
+    const std::array<float, 4> metal{0.55F, 0.57F, 0.56F, 1.0F};
+    const std::array<float, 4> post{0.42F, 0.43F, 0.42F, 1.0F};
+    const std::array<float, 4> checkpoint{0.18F, 0.66F, 0.94F, 1.0F};
+
+    const auto inFenceSection = [](float distance) {
+        return (distance >= 250.0F && distance <= 1640.0F) ||
+               (distance >= 1820.0F && distance <= 2720.0F);
+    };
+
+    for (int segment = 0; segment < segments; ++segment) {
+        const float startDistance =
+            track.lapLengthM() * static_cast<float>(segment) / static_cast<float>(segments);
+        const float endDistance =
+            track.lapLengthM() * static_cast<float>(segment + 1) / static_cast<float>(segments);
+        const TrackPose start = track.poseAtDistance(startDistance);
+        const TrackPose end = track.poseAtDistance(endDistance);
+        const bool redStripe = (static_cast<int>(startDistance / 6.0F) % 2) == 0;
+        const std::array<float, 4> curbColor = redStripe ? curbRed : curbWhite;
+
+        appendTrackStrip(
+            vertices, start, end, -halfRoad, halfRoad, 0.0F, roadColor, kMaterialAsphalt, -1.0F, 1.0F);
+        appendTrackStrip(
+            vertices, start, end, -curbOuter, -halfRoad, 0.012F, curbColor, kMaterialTrackPaint, -1.0F, -0.78F);
+        appendTrackStrip(
+            vertices, start, end, halfRoad, curbOuter, 0.012F, curbColor, kMaterialTrackPaint, 0.78F, 1.0F);
+        appendTrackStrip(
+            vertices, start, end, -barrier, -curbOuter, -0.018F, grassColor, kMaterialGrass, -1.0F, -0.82F);
+        appendTrackStrip(
+            vertices, start, end, curbOuter, barrier, -0.018F, grassColor, kMaterialGrass, 0.82F, 1.0F);
+
+        appendTrackVerticalBand(vertices, start, end, barrier, 0.42F, 0.62F, metal, kMaterialMetal);
+        appendTrackVerticalBand(vertices, start, end, barrier, 0.76F, 0.94F, metal, kMaterialMetal);
+        appendTrackVerticalBand(vertices, start, end, -barrier, 0.34F, 0.56F, metal, kMaterialMetal);
+        if (segment % 3 == 0) {
+            appendTrackOrientedBox(vertices, start, barrier, 0.45F, 0.10F, 0.055F, 0.45F, post, kMaterialMetal);
+            appendTrackOrientedBox(vertices, start, -barrier, 0.35F, 0.10F, 0.055F, 0.34F, post, kMaterialMetal);
+        }
+        if (inFenceSection(startDistance)) {
+            appendCatchFencePanel(vertices, start, end, barrier, 0.95F, segment);
+        }
+    }
+
+    appendGenericTrackMarker(vertices, track.poseAtDistance(0.0F), halfRoad, {0.94F, 0.92F, 0.84F, 1.0F});
+    for (const float checkpointDistance : config.checkpointsM) {
+        appendGenericTrackMarker(vertices, track.poseAtDistance(checkpointDistance), halfRoad, checkpoint);
+    }
+
+    appendGrandstandSection(vertices, track.poseAtDistance(580.0F), barrier + 20.0F);
+    appendGrandstandSection(vertices, track.poseAtDistance(2620.0F), barrier + 16.0F);
+    for (int berm = 0; berm < 7; ++berm) {
+        const TrackPose pose = track.poseAtDistance(1870.0F + static_cast<float>(berm) * 18.0F);
+        appendTrackOrientedBox(
+            vertices,
+            pose,
+            -barrier - 18.0F,
+            1.0F + static_cast<float>(berm) * 0.16F,
+            7.0F,
+            11.0F + static_cast<float>(berm) * 1.2F,
+            0.55F,
+            {0.45F, 0.34F, 0.15F, 1.0F},
+            kMaterialGrass);
+    }
+
+    return vertices;
+}
+
+std::vector<Vertex> makeGroundGeometry(const Track& track) {
+    if (const auto* ovalTrack = dynamic_cast<const OvalTrack*>(&track)) {
+        return makeGroundGeometry(*ovalTrack);
+    }
+    if (const auto* hillTrack = dynamic_cast<const HillCircuitTrack*>(&track)) {
+        return makeGroundGeometry(*hillTrack);
+    }
+    return {};
 }
 
 std::vector<Vertex> makeCarBodyGeometry() {
@@ -1572,12 +2267,29 @@ const char* shaderSource() {
                 clearcoatPower = 220.0;
                 clearcoatRoughness = 0.018;
                 environmentReflectionScale = 1.18;
+            } else if (material > 16.5 && material < 17.5) {
+                const float2 brickUv = input.worldPosition.xz * float2(1.65, 2.85);
+                const float2 cell = fract(brickUv + float2(floor(brickUv.y) * 0.5, 0.0));
+                const float mortar =
+                    max(
+                        1.0 - smoothstep(0.025, 0.055, min(cell.x, 1.0 - cell.x)),
+                        1.0 - smoothstep(0.025, 0.055, min(cell.y, 1.0 - cell.y)));
+                const float brickNoise = noise21(input.worldPosition.xz * 7.0);
+                base = mix(float3(0.46, 0.205, 0.115), float3(0.61, 0.31, 0.18), brickNoise);
+                base = mix(base, float3(0.64, 0.57, 0.48), mortar * 0.78);
+                normal = normalMapped(concreteNormal, materialSampler, uv, normal, input.tangent, 0.30);
+                roughDiffuse = 0.88;
+                roughness = 0.66;
+                specularStrength = 0.018;
+                specularPower = 20.0;
+                materialOcclusion = 0.94;
             }
 
             float contactShadow = 0.0;
             if ((material > 0.5 && material < 1.5) ||
                 (material > 1.5 && material < 2.5) ||
-                (material > 2.5 && material < 3.5)) {
+                (material > 2.5 && material < 3.5) ||
+                (material > 16.5 && material < 17.5)) {
                 const float2 carDelta = input.worldPosition.xz - uniforms.contactParams.xy;
                 const float yaw = uniforms.contactParams.z;
                 const float2 carRight = float2(cos(yaw), -sin(yaw));
@@ -1873,11 +2585,15 @@ struct MetalRenderer::Impl {
     std::array<Vertex, kMaxSkidmarkVertices> skidmarkVertices{};
     NSUInteger skyVertexCount = 0;
     NSUInteger groundVertexCount = 0;
+    std::vector<ShadowGroundChunk> shadowGroundChunks;
     NSUInteger carBodyVertexCount = 0;
     NSUInteger wheelVertexCount = 0;
     NSUInteger steeringWheelVertexCount = 0;
     NSUInteger suspensionVertexCount = 0;
     NSUInteger skidmarkVertexCount = 0;
+    NSUInteger skidmarkVertexCapacity = kMaxSkidmarkVertices;
+    NSUInteger skidmarkWriteVertex = 0;
+    bool skidmarkBufferWrapped = false;
     int drawableWidth = 0;
     int drawableHeight = 0;
     float renderScale = 1.0F;
@@ -2086,6 +2802,54 @@ struct MetalRenderer::Impl {
         return true;
     }
 
+    bool createTrackGeometry(const Track& track) {
+        const std::vector<Vertex> ground = makeGroundGeometry(track);
+        if (ground.empty()) {
+            error = "MetalRenderer could not build track geometry";
+            return false;
+        }
+        groundVertexCount = ground.size();
+        groundBuffer = [device newBufferWithBytes:ground.data()
+                                          length:ground.size() * sizeof(Vertex)
+                                         options:MTLResourceStorageModeShared];
+        shadowGroundChunks.clear();
+        constexpr std::size_t kShadowChunkVertexCount = 768U;
+        shadowGroundChunks.reserve(
+            (ground.size() + kShadowChunkVertexCount - 1U) / kShadowChunkVertexCount);
+        for (std::size_t vertexStart = 0U; vertexStart < ground.size();
+             vertexStart += kShadowChunkVertexCount) {
+            const std::size_t vertexCount =
+                std::min(kShadowChunkVertexCount, ground.size() - vertexStart);
+            const Vertex& first = ground[vertexStart];
+            ShadowGroundChunk chunk;
+            chunk.vertexStart = static_cast<std::uint32_t>(vertexStart);
+            chunk.vertexCount = static_cast<std::uint32_t>(vertexCount);
+            chunk.minimum = {first.position[0], first.position[1], first.position[2]};
+            chunk.maximum = chunk.minimum;
+            for (std::size_t index = vertexStart + 1U;
+                 index < vertexStart + vertexCount;
+                 ++index) {
+                const Vertex& vertex = ground[index];
+                chunk.minimum.x = std::min(chunk.minimum.x, vertex.position[0]);
+                chunk.minimum.y = std::min(chunk.minimum.y, vertex.position[1]);
+                chunk.minimum.z = std::min(chunk.minimum.z, vertex.position[2]);
+                chunk.maximum.x = std::max(chunk.maximum.x, vertex.position[0]);
+                chunk.maximum.y = std::max(chunk.maximum.y, vertex.position[1]);
+                chunk.maximum.z = std::max(chunk.maximum.z, vertex.position[2]);
+            }
+            shadowGroundChunks.push_back(chunk);
+        }
+        hasValidShadowMap = false;
+        hasLastSkidmark = false;
+        skidmarkVertexCount = 0;
+        skidmarkWriteVertex = 0;
+        skidmarkBufferWrapped = false;
+        if (skidmarkBuffer != nil) {
+            std::memset(skidmarkBuffer.contents, 0, skidmarkVertexCapacity * sizeof(Vertex));
+        }
+        return groundBuffer != nil;
+    }
+
     bool createGeometry(const Track& track) {
         const std::vector<Vertex> sky = makeSkyGeometry();
         skyVertexCount = sky.size();
@@ -2093,11 +2857,9 @@ struct MetalRenderer::Impl {
                                         length:sky.size() * sizeof(Vertex)
                                        options:MTLResourceStorageModeShared];
 
-        const std::vector<Vertex> ground = makeGroundGeometry(track);
-        groundVertexCount = ground.size();
-        groundBuffer = [device newBufferWithBytes:ground.data()
-                                          length:ground.size() * sizeof(Vertex)
-                                         options:MTLResourceStorageModeShared];
+        if (!createTrackGeometry(track)) {
+            return false;
+        }
 
         const std::vector<Vertex> carBody =
             loadObjGeometryOrFallback("assets/meshes/car.obj", makeCarBodyGeometry());
@@ -2124,7 +2886,7 @@ struct MetalRenderer::Impl {
                                                options:MTLResourceStorageModeShared];
         smokeBuffer = [device newBufferWithLength:kMaxSmokeVertices * sizeof(Vertex)
                                           options:MTLResourceStorageModeShared];
-        skidmarkBuffer = [device newBufferWithLength:skidmarkVertices.size() * sizeof(Vertex)
+        skidmarkBuffer = [device newBufferWithLength:skidmarkVertexCapacity * sizeof(Vertex)
                                              options:MTLResourceStorageModeShared];
         uiBuffer = [device newBufferWithLength:uiVertices.size() * sizeof(Vertex)
                                        options:MTLResourceStorageModeShared];
@@ -2596,9 +3358,18 @@ struct MetalRenderer::Impl {
                 return skidmarkVertexCount;
             }
         }
-        if (skidmarkVertexCount + 12U > skidmarkVertices.size()) {
-            return skidmarkVertexCount;
+        if (skidmarkVertexCapacity < kSkidmarkVerticesPerMark) {
+            return 0;
         }
+        if (skidmarkWriteVertex + kSkidmarkVerticesPerMark > skidmarkVertexCapacity) {
+            skidmarkWriteVertex = 0;
+            skidmarkBufferWrapped = true;
+        }
+        NSUInteger writeIndex = skidmarkWriteVertex;
+        const NSUInteger uploadStart = writeIndex;
+        const auto storeSkidmarkVertex = [&](const Vertex& vertex) {
+            skidmarkVertices[writeIndex++] = vertex;
+        };
 
         const auto appendSkidQuad = [&](int side) {
             const float sideScale = static_cast<float>(side);
@@ -2619,25 +3390,25 @@ struct MetalRenderer::Impl {
             const Vec3 p3{center.x - across.x + along.x, center.y, center.z - across.z + along.z};
             const std::array<float, 4> color{0.018F, 0.016F, 0.014F, 0.18F + intensity * 0.28F};
             constexpr Vec3 normal{0.0F, 1.0F, 0.0F};
-            skidmarkVertices[skidmarkVertexCount++] =
-                makeEffectVertex(p0, color, normal, kMaterialSkidmark, 0.0F, 1.0F);
-            skidmarkVertices[skidmarkVertexCount++] =
-                makeEffectVertex(p1, color, normal, kMaterialSkidmark, 1.0F, 1.0F);
-            skidmarkVertices[skidmarkVertexCount++] =
-                makeEffectVertex(p2, color, normal, kMaterialSkidmark, 1.0F, 0.0F);
-            skidmarkVertices[skidmarkVertexCount++] =
-                makeEffectVertex(p0, color, normal, kMaterialSkidmark, 0.0F, 1.0F);
-            skidmarkVertices[skidmarkVertexCount++] =
-                makeEffectVertex(p2, color, normal, kMaterialSkidmark, 1.0F, 0.0F);
-            skidmarkVertices[skidmarkVertexCount++] =
-                makeEffectVertex(p3, color, normal, kMaterialSkidmark, 0.0F, 0.0F);
+            storeSkidmarkVertex(makeEffectVertex(p0, color, normal, kMaterialSkidmark, 0.0F, 1.0F));
+            storeSkidmarkVertex(makeEffectVertex(p1, color, normal, kMaterialSkidmark, 1.0F, 1.0F));
+            storeSkidmarkVertex(makeEffectVertex(p2, color, normal, kMaterialSkidmark, 1.0F, 0.0F));
+            storeSkidmarkVertex(makeEffectVertex(p0, color, normal, kMaterialSkidmark, 0.0F, 1.0F));
+            storeSkidmarkVertex(makeEffectVertex(p2, color, normal, kMaterialSkidmark, 1.0F, 0.0F));
+            storeSkidmarkVertex(makeEffectVertex(p3, color, normal, kMaterialSkidmark, 0.0F, 0.0F));
         };
 
         appendSkidQuad(-1);
         appendSkidQuad(1);
         lastSkidmarkPosition = currentPosition;
         hasLastSkidmark = true;
-        std::memcpy(skidmarkBuffer.contents, skidmarkVertices.data(), skidmarkVertexCount * sizeof(Vertex));
+        skidmarkWriteVertex = writeIndex;
+        skidmarkVertexCount =
+            skidmarkBufferWrapped ? skidmarkVertexCapacity : std::max(skidmarkVertexCount, skidmarkWriteVertex);
+        std::memcpy(
+            static_cast<char*>(skidmarkBuffer.contents) + uploadStart * sizeof(Vertex),
+            skidmarkVertices.data() + uploadStart,
+            (writeIndex - uploadStart) * sizeof(Vertex));
         return skidmarkVertexCount;
     }
 
@@ -2715,7 +3486,7 @@ struct MetalRenderer::Impl {
             }
         };
 
-        const float scale = renderScale;
+        const float scale = renderScale * 1.18F;
         const std::array<float, 4> panel{0.006F, 0.010F, 0.016F, 0.70F};
         const std::array<float, 4> panelDeep{0.002F, 0.004F, 0.008F, 0.78F};
         const std::array<float, 4> panelEdge{0.20F, 0.78F, 0.96F, 0.44F};
@@ -2725,18 +3496,46 @@ struct MetalRenderer::Impl {
         const std::array<float, 4> speedFill{0.30F, 0.78F, 1.0F, 0.82F};
         const std::array<float, 4> throttleFill{0.23F, 1.0F, 0.48F, 0.76F};
         const std::array<float, 4> brakeFill{1.0F, 0.20F, 0.12F, 0.78F};
-        const float hudWidth = std::min(870.0F * scale, static_cast<float>(drawableWidth) - 24.0F * scale);
-        const float hudHeight = 126.0F * scale;
+        const float hudWidth = std::min(1010.0F * scale, static_cast<float>(drawableWidth) - 20.0F * scale);
+        const float hudHeight = 154.0F * scale;
         const float hudX = static_cast<float>(drawableWidth) * 0.5F - hudWidth * 0.5F;
         const float hudY = static_cast<float>(drawableHeight) - hudHeight - 12.0F * scale;
         const float centerX = hudX + hudWidth * 0.5F;
-        const float centerY = hudY + 106.0F * scale;
+        const float centerY = hudY + 130.0F * scale;
+        const float rpmStart = std::min(scene.vehicle.rpmArcStartRpm, scene.vehicle.redlineRpm - 100.0F);
+        const float rpmEnd = std::max(rpmStart + 500.0F, scene.vehicle.redlineRpm);
         const float rpmRatio =
-            std::clamp((scene.vehicle.rpm - 3000.0F) / (12000.0F - 3000.0F), 0.0F, 1.0F);
+            std::clamp((scene.vehicle.rpm - rpmStart) / std::max(1.0F, rpmEnd - rpmStart), 0.0F, 1.0F);
+        const float shiftRatio =
+            std::clamp((scene.vehicle.shiftUpRpm - rpmStart) / std::max(1.0F, rpmEnd - rpmStart), 0.0F, 1.0F);
+        const float ledFlash =
+            scene.vehicle.rpm > scene.vehicle.shiftUpRpm ? (std::sin(elapsedSeconds * 36.0F) * 0.5F + 0.5F) : 0.0F;
         const float speedMph = scene.vehicle.speedMps * 2.2369363F;
         const float speedRatio = std::clamp(speedMph / 240.0F, 0.0F, 1.0F);
         const float throttleRatio = std::clamp(scene.throttleInput, 0.0F, 1.0F);
         const float brakeRatio = std::clamp(scene.brakeInput, 0.0F, 1.0F);
+        const auto mixColor = [](std::array<float, 4> a, std::array<float, 4> b, float t) {
+            const float blend = std::clamp(t, 0.0F, 1.0F);
+            return std::array<float, 4>{
+                a[0] + (b[0] - a[0]) * blend,
+                a[1] + (b[1] - a[1]) * blend,
+                a[2] + (b[2] - a[2]) * blend,
+                a[3] + (b[3] - a[3]) * blend,
+            };
+        };
+        const auto withAlphaScale = [](std::array<float, 4> color, float alphaScale) {
+            color[3] *= std::clamp(alphaScale, 0.0F, 1.0F);
+            return color;
+        };
+        const auto smoothStep01 = [](float edge0, float edge1, float value) {
+            const float t = std::clamp((value - edge0) / std::max(0.0001F, edge1 - edge0), 0.0F, 1.0F);
+            return t * t * (3.0F - 2.0F * t);
+        };
+        const float meanRearLongitudinalSlip =
+            0.5F *
+            (std::abs(scene.vehicle.rearLeftLongitudinalSlip) +
+             std::abs(scene.vehicle.rearRightLongitudinalSlip));
+        const float wheelspinArcBlend = smoothStep01(0.10F, 0.20F, meanRearLongitudinalSlip);
 
         appendRoundedRect(
             hudX - 10.0F * scale,
@@ -2756,38 +3555,9 @@ struct MetalRenderer::Impl {
         appendScreenQuad(hudX + 22.0F * scale, hudY + 8.0F * scale, hudWidth - 44.0F * scale, 1.2F * scale, panelEdge);
         appendScreenQuad(hudX + 22.0F * scale, hudY + 38.0F * scale, hudWidth - 44.0F * scale, 1.0F * scale, {0.95F, 0.78F, 0.30F, 0.20F});
 
-        const float ledWidth = std::min(28.0F * scale, (hudWidth - 120.0F * scale) / 16.0F);
-        const float ledGap = 5.0F * scale;
-        const float ledTotal = ledWidth * 14.0F + ledGap * 13.0F;
-        const float ledX = centerX - ledTotal * 0.5F;
-        const float ledY = hudY - 23.0F * scale;
-        const float ledFlash =
-            scene.vehicle.rpm > 11450.0F ? (std::sin(elapsedSeconds * 36.0F) * 0.5F + 0.5F) : 0.0F;
-        for (int led = 0; led < 14; ++led) {
-            const float threshold = 0.48F + static_cast<float>(led) * 0.036F;
-            const bool lit = rpmRatio >= threshold;
-            std::array<float, 4> ledColor = {0.020F, 0.026F, 0.030F, 0.72F};
-            if (lit) {
-                if (led >= 11) {
-                    ledColor = {1.0F, 0.05F + ledFlash * 0.30F, 0.02F, 0.96F};
-                } else if (led >= 7) {
-                    ledColor = {1.0F, 0.76F, 0.10F, 0.92F};
-                } else {
-                    ledColor = {0.14F, 1.0F, 0.44F, 0.86F};
-                }
-            }
-            appendRoundedRect(
-                ledX + static_cast<float>(led) * (ledWidth + ledGap),
-                ledY,
-                ledWidth,
-                9.0F * scale,
-                3.5F * scale,
-                ledColor);
-        }
-
-        appendRoundedRect(centerX - 57.0F * scale, hudY + 27.0F * scale, 114.0F * scale, 78.0F * scale, 18.0F * scale, panelDeep);
-        appendRoundedRect(centerX - 61.0F * scale, hudY + 23.0F * scale, 122.0F * scale, 86.0F * scale, 20.0F * scale, {1.0F, 0.80F, 0.26F, 0.12F});
-        appendScreenQuad(centerX - 36.0F * scale, hudY + 91.0F * scale, 72.0F * scale, 1.4F * scale, {1.0F, 0.88F, 0.40F, 0.52F});
+        appendRoundedRect(centerX - 64.0F * scale, hudY + 35.0F * scale, 128.0F * scale, 88.0F * scale, 20.0F * scale, panelDeep);
+        appendRoundedRect(centerX - 68.0F * scale, hudY + 31.0F * scale, 136.0F * scale, 96.0F * scale, 22.0F * scale, {1.0F, 0.80F, 0.26F, 0.12F});
+        appendScreenQuad(centerX - 42.0F * scale, hudY + 109.0F * scale, 84.0F * scale, 1.6F * scale, {1.0F, 0.88F, 0.40F, 0.52F});
 
         constexpr int kRpmSegments = 54;
         const float arcStart = std::numbers::pi_v<float> * 1.04F;
@@ -2806,18 +3576,31 @@ struct MetalRenderer::Impl {
                 } else {
                     color = {0.20F, 1.0F, 0.46F, 0.82F};
                 }
+                color = mixColor(color, {1.0F, 0.47F, 0.08F, 0.96F}, wheelspinArcBlend);
             }
-            appendArcSegment(centerX, centerY, 108.0F * scale, 120.0F * scale, a0, a1, color);
+            appendArcSegment(centerX, centerY, 124.0F * scale, 138.0F * scale, a0, a1, color);
         }
+        const float upshiftT0 = std::clamp(shiftRatio - 0.018F, 0.0F, 0.98F);
+        const float upshiftT1 = std::clamp(shiftRatio + 0.012F, upshiftT0 + 0.008F, 1.0F);
+        const float upshiftA0 = arcStart + (arcEnd - arcStart) * upshiftT0;
+        const float upshiftA1 = arcStart + (arcEnd - arcStart) * upshiftT1;
+        appendArcSegment(
+            centerX,
+            centerY,
+            141.0F * scale,
+            147.0F * scale,
+            upshiftA0,
+            upshiftA1,
+            {0.64F + ledFlash * 0.24F, 0.22F + ledFlash * 0.10F, 1.0F, 0.82F + ledFlash * 0.16F});
 
-        const float leftX = hudX + 34.0F * scale;
-        const float rightX = hudX + hudWidth - 250.0F * scale;
-        appendRoundedRect(leftX, hudY + 52.0F * scale, 202.0F * scale, 11.0F * scale, 5.5F * scale, barBack);
-        appendRoundedRect(leftX, hudY + 52.0F * scale, 202.0F * scale * speedRatio, 11.0F * scale, 5.5F * scale, speedFill);
-        appendRoundedRect(leftX, hudY + 84.0F * scale, 86.0F * scale, 10.0F * scale, 5.0F * scale, barBack);
-        appendRoundedRect(leftX, hudY + 84.0F * scale, 86.0F * scale * brakeRatio, 10.0F * scale, 5.0F * scale, brakeFill);
-        appendRoundedRect(leftX + 108.0F * scale, hudY + 84.0F * scale, 106.0F * scale, 10.0F * scale, 5.0F * scale, barBack);
-        appendRoundedRect(leftX + 108.0F * scale, hudY + 84.0F * scale, 106.0F * scale * throttleRatio, 10.0F * scale, 5.0F * scale, throttleFill);
+        const float leftX = hudX + 38.0F * scale;
+        const float rightX = hudX + hudWidth - 330.0F * scale;
+        appendRoundedRect(leftX, hudY + 64.0F * scale, 238.0F * scale, 14.0F * scale, 7.0F * scale, barBack);
+        appendRoundedRect(leftX, hudY + 64.0F * scale, 238.0F * scale * speedRatio, 14.0F * scale, 7.0F * scale, speedFill);
+        appendRoundedRect(leftX, hudY + 106.0F * scale, 116.0F * scale, 14.0F * scale, 7.0F * scale, barBack);
+        appendRoundedRect(leftX, hudY + 106.0F * scale, 116.0F * scale * brakeRatio, 14.0F * scale, 7.0F * scale, brakeFill);
+        appendRoundedRect(leftX + 142.0F * scale, hudY + 106.0F * scale, 144.0F * scale, 14.0F * scale, 7.0F * scale, barBack);
+        appendRoundedRect(leftX + 142.0F * scale, hudY + 106.0F * scale, 144.0F * scale * throttleRatio, 14.0F * scale, 7.0F * scale, throttleFill);
 
         const std::array<float, 4> tireBack{0.020F, 0.026F, 0.032F, 0.76F};
         const std::array<float, 4> tireCool{0.26F, 0.72F, 1.0F, 0.82F};
@@ -2836,19 +3619,36 @@ struct MetalRenderer::Impl {
             scene.vehicle.rearLeftTireUsage,
             scene.vehicle.rearRightTireUsage,
         };
+        const float wears[4] = {
+            scene.vehicle.frontLeftTireWear,
+            scene.vehicle.frontRightTireWear,
+            scene.vehicle.rearLeftTireWear,
+            scene.vehicle.rearRightTireWear,
+        };
         for (int tire = 0; tire < 4; ++tire) {
             const float column = static_cast<float>(tire % 2);
             const float row = static_cast<float>(tire / 2);
-            const float x = rightX + column * 62.0F * scale;
-            const float y = hudY + 57.0F * scale + row * 32.0F * scale;
+            const float x = rightX + column * 88.0F * scale;
+            const float y = hudY + 64.0F * scale + row * 42.0F * scale;
             const float tempRatio = std::clamp((temps[tire] - 45.0F) / 100.0F, 0.0F, 1.0F);
             const float usageRatio = std::clamp(usages[tire], 0.0F, 1.0F);
+            const float wearRatio = std::clamp(wears[tire], 0.0F, 1.0F);
             const std::array<float, 4> tireColor =
                 temps[tire] > 122.0F ? tireHot : (temps[tire] < 70.0F ? tireCool : tireWarm);
-            appendRoundedRect(x, y, 46.0F * scale, 18.0F * scale, 5.0F * scale, tireBack);
-            appendRoundedRect(x + 3.0F * scale, y + 3.0F * scale, 40.0F * scale * tempRatio, 5.0F * scale, 2.5F * scale, tireColor);
-            appendRoundedRect(x + 3.0F * scale, y + 10.0F * scale, 40.0F * scale * usageRatio, 4.0F * scale, 2.0F * scale,
-                              usageRatio > 0.90F ? usageWarn : speedFill);
+            const std::array<float, 4> wearColor =
+                mixColor({1.0F, 0.18F, 0.10F, 0.86F}, {0.22F, 1.0F, 0.44F, 0.86F}, wearRatio);
+            const float pulseBase =
+                0.5F + 0.5F * std::sin(elapsedSeconds * 8.0F * std::numbers::pi_v<float>);
+            const float cornerOpacity = usageRatio > 0.85F ? (0.6F + 0.4F * pulseBase) : 1.0F;
+            const std::array<float, 4> usageColor =
+                usageRatio > 0.85F ? mixColor(speedFill, usageWarn, pulseBase) : speedFill;
+            appendRoundedRect(x, y, 64.0F * scale, 30.0F * scale, 7.0F * scale, withAlphaScale(tireBack, cornerOpacity));
+            appendRoundedRect(x + 4.0F * scale, y + 5.0F * scale, 56.0F * scale * tempRatio, 5.5F * scale, 2.75F * scale,
+                              withAlphaScale(tireColor, cornerOpacity));
+            appendRoundedRect(x + 4.0F * scale, y + 13.0F * scale, 56.0F * scale * wearRatio, 5.0F * scale, 2.5F * scale,
+                              withAlphaScale(wearColor, cornerOpacity));
+            appendRoundedRect(x + 4.0F * scale, y + 21.0F * scale, 56.0F * scale * usageRatio, 5.0F * scale, 2.5F * scale,
+                              withAlphaScale(usageColor, cornerOpacity));
         }
 
         if (scene.wallContact) {
@@ -2880,6 +3680,267 @@ struct MetalRenderer::Impl {
         }
 
         std::memcpy(uiBuffer.contents, uiVertices.data(), count * sizeof(Vertex));
+        return count;
+    }
+
+    std::size_t buildHomeUiVertices(const HomeScreenState& state) {
+        std::size_t count = 0;
+        const auto appendScreenQuad = [&](float x, float y, float width, float height, std::array<float, 4> color) {
+            if (count + 6 > uiVertices.size()) {
+                return;
+            }
+            uiVertices[count++] = makeUiVertex(x, y, 0.0F, color);
+            uiVertices[count++] = makeUiVertex(x + width, y, 0.0F, color);
+            uiVertices[count++] = makeUiVertex(x + width, y + height, 0.0F, color);
+            uiVertices[count++] = makeUiVertex(x, y, 0.0F, color);
+            uiVertices[count++] = makeUiVertex(x + width, y + height, 0.0F, color);
+            uiVertices[count++] = makeUiVertex(x, y + height, 0.0F, color);
+        };
+        const auto appendScreenTriangle = [&](Vec3 a, Vec3 b, Vec3 c, std::array<float, 4> color) {
+            if (count + 3 > uiVertices.size()) {
+                return;
+            }
+            uiVertices[count++] = makeUiVertex(a.x, a.y, 0.0F, color);
+            uiVertices[count++] = makeUiVertex(b.x, b.y, 0.0F, color);
+            uiVertices[count++] = makeUiVertex(c.x, c.y, 0.0F, color);
+        };
+        const auto appendRoundedRect = [&](float x, float y, float width, float height, float radius, std::array<float, 4> color) {
+            constexpr int kCornerSegments = 6;
+            constexpr int kPointCount = kCornerSegments * 4 + 4;
+            if (count + kPointCount * 3 > uiVertices.size()) {
+                return;
+            }
+            std::array<Vec3, kPointCount> points{};
+            int pointCount = 0;
+            const float r = std::min(radius, std::min(width, height) * 0.5F);
+            const auto addCorner = [&](float cx, float cy, float startAngle) {
+                for (int segment = 0; segment <= kCornerSegments; ++segment) {
+                    const float a = startAngle + static_cast<float>(segment) *
+                                                 (std::numbers::pi_v<float> * 0.5F) /
+                                                 static_cast<float>(kCornerSegments);
+                    points[pointCount++] = {cx + std::cos(a) * r, cy + std::sin(a) * r, 0.0F};
+                }
+            };
+            addCorner(x + width - r, y + r, -std::numbers::pi_v<float> * 0.5F);
+            addCorner(x + width - r, y + height - r, 0.0F);
+            addCorner(x + r, y + height - r, std::numbers::pi_v<float> * 0.5F);
+            addCorner(x + r, y + r, std::numbers::pi_v<float>);
+            const Vec3 center{x + width * 0.5F, y + height * 0.5F, 0.0F};
+            for (int index = 0; index < pointCount; ++index) {
+                appendScreenTriangle(center, points[index], points[(index + 1) % pointCount], color);
+            }
+        };
+
+        const float width = static_cast<float>(drawableWidth);
+        const float height = static_cast<float>(drawableHeight);
+        const float scale = std::clamp(std::min(width / 1440.0F, height / 900.0F), 0.76F, 1.28F);
+        const bool stacked = width < 980.0F * scale;
+        const std::array<float, 4> background{0.006F, 0.010F, 0.018F, 1.0F};
+        const std::array<float, 4> panel{0.018F, 0.028F, 0.044F, 0.72F};
+        const std::array<float, 4> panelActive{0.030F, 0.060F, 0.076F, 0.82F};
+        const std::array<float, 4> panelEdge{0.24F, 0.86F, 1.0F, 0.40F};
+        const std::array<float, 4> greenEdge{0.28F, 1.0F, 0.52F, 0.42F};
+        const std::array<float, 4> glass{0.12F, 0.18F, 0.24F, 0.28F};
+        const std::array<float, 4> barBack{0.018F, 0.024F, 0.034F, 0.82F};
+        const std::array<float, 4> cyan{0.22F, 0.88F, 1.0F, 0.82F};
+        const std::array<float, 4> green{0.26F, 1.0F, 0.48F, 0.84F};
+        const std::array<float, 4> red{1.0F, 0.24F, 0.16F, 0.82F};
+        const auto selectionColor = [&](int item) {
+            return state.selectedItem == item ? greenEdge : panelEdge;
+        };
+        const auto barRatio = [&](float value, float minValue, float maxValue) {
+            return std::clamp((value - minValue) / std::max(0.001F, maxValue - minValue), 0.0F, 1.0F);
+        };
+
+        appendScreenQuad(0.0F, 0.0F, width, height, background);
+        appendScreenQuad(0.0F, 0.0F, width, 96.0F * scale, {0.022F, 0.040F, 0.060F, 0.88F});
+        appendScreenQuad(0.0F, 94.0F * scale, width, 2.0F * scale, {0.24F, 0.86F, 1.0F, 0.34F});
+        appendScreenQuad(0.0F, height - 86.0F * scale, width, 86.0F * scale, {0.012F, 0.018F, 0.030F, 0.90F});
+
+        const float gap = 34.0F * scale;
+        const float panelWidth = stacked ? width - 68.0F * scale
+                                         : std::min(520.0F * scale, width * 0.42F);
+        const float panelHeight = stacked ? 254.0F * scale : 430.0F * scale;
+        const float leftX = stacked ? 34.0F * scale : width * 0.5F - panelWidth - gap * 0.5F;
+        const float rightX = stacked ? leftX : width * 0.5F + gap * 0.5F;
+        const float leftY = stacked ? 126.0F * scale : 152.0F * scale;
+        const float rightY = stacked ? leftY + panelHeight + 22.0F * scale : leftY;
+        const float startY = stacked ? height - 64.0F * scale : leftY + panelHeight + 38.0F * scale;
+
+        const auto appendPanel = [&](float x, float y, float w, float h, int item) {
+            appendRoundedRect(x - 7.0F * scale, y - 7.0F * scale, w + 14.0F * scale, h + 14.0F * scale,
+                              23.0F * scale, {selectionColor(item)[0], selectionColor(item)[1], selectionColor(item)[2], 0.15F});
+            appendRoundedRect(x, y, w, h, 19.0F * scale, state.selectedItem == item ? panelActive : panel);
+            appendRoundedRect(x + 4.0F * scale, y + 4.0F * scale, w - 8.0F * scale, 48.0F * scale, 16.0F * scale, glass);
+            appendScreenQuad(x + 24.0F * scale, y + 58.0F * scale, w - 48.0F * scale, 1.4F * scale, selectionColor(item));
+        };
+        appendPanel(leftX, leftY, panelWidth, panelHeight, 0);
+        appendPanel(rightX, rightY, panelWidth, panelHeight, state.selectedItem >= 1 && state.selectedItem <= 3 ? state.selectedItem : 1);
+
+        const float cardX = leftX + 34.0F * scale;
+        const float cardWidth = panelWidth - 68.0F * scale;
+        const float cardHeight = stacked ? 58.0F * scale : 82.0F * scale;
+        for (int track = 0; track < 2; ++track) {
+            const float y = leftY + (stacked ? 82.0F : 104.0F) * scale + static_cast<float>(track) * (cardHeight + 18.0F * scale);
+            const bool active = state.selectedTrack == track;
+            appendRoundedRect(cardX, y, cardWidth, cardHeight, 13.0F * scale,
+                              active ? std::array<float, 4>{0.040F, 0.104F, 0.126F, 0.82F}
+                                     : std::array<float, 4>{0.014F, 0.020F, 0.030F, 0.72F});
+            appendRoundedRect(cardX + 5.0F * scale, y + 5.0F * scale, cardWidth - 10.0F * scale, cardHeight - 10.0F * scale,
+                              10.0F * scale, active ? cyan : std::array<float, 4>{0.18F, 0.28F, 0.34F, 0.18F});
+            appendScreenQuad(cardX + 18.0F * scale, y + cardHeight - 8.0F * scale,
+                             (cardWidth - 36.0F * scale) * (active ? 1.0F : 0.28F), 2.0F * scale,
+                             active ? green : std::array<float, 4>{0.22F, 0.88F, 1.0F, 0.24F});
+        }
+
+        const float rowX = rightX + 34.0F * scale;
+        const float rowWidth = panelWidth - 68.0F * scale;
+        const float rowTop = rightY + (stacked ? 80.0F : 98.0F) * scale;
+        const float rowStep = stacked ? 54.0F * scale : 76.0F * scale;
+        const float barHeight = 12.0F * scale;
+        const float wingMin = state.wingSettingMin;
+        const float wingMax = state.wingSettingMax;
+        const float setupValues[3] = {
+            barRatio(state.frontWingSetting, wingMin, wingMax),
+            barRatio(state.rearWingSetting, wingMin, wingMax),
+            barRatio(state.brakeBias, 0.45F, 0.70F),
+        };
+        for (int row = 0; row < 3; ++row) {
+            const float y = rowTop + static_cast<float>(row) * rowStep;
+            const bool active = state.selectedItem == row + 1;
+            appendRoundedRect(rowX, y, rowWidth, stacked ? 42.0F * scale : 56.0F * scale, 12.0F * scale,
+                              active ? std::array<float, 4>{0.040F, 0.092F, 0.082F, 0.74F}
+                                     : std::array<float, 4>{0.014F, 0.020F, 0.030F, 0.66F});
+            appendRoundedRect(rowX + 18.0F * scale, y + (stacked ? 27.0F : 36.0F) * scale,
+                              rowWidth - 36.0F * scale, barHeight, barHeight * 0.5F, barBack);
+            const std::array<float, 4> fill = row == 2 ? red : (row == 0 ? cyan : green);
+            appendRoundedRect(rowX + 18.0F * scale, y + (stacked ? 27.0F : 36.0F) * scale,
+                              (rowWidth - 36.0F * scale) * setupValues[row], barHeight, barHeight * 0.5F, fill);
+        }
+
+        const float startWidth = std::min(420.0F * scale, width - 96.0F * scale);
+        const float startX = width * 0.5F - startWidth * 0.5F;
+        appendRoundedRect(startX - 5.0F * scale, startY - 5.0F * scale, startWidth + 10.0F * scale, 54.0F * scale,
+                          20.0F * scale, state.selectedItem == 4 ? std::array<float, 4>{0.26F, 1.0F, 0.48F, 0.20F}
+                                                                  : std::array<float, 4>{0.22F, 0.88F, 1.0F, 0.12F});
+        appendRoundedRect(startX, startY, startWidth, 44.0F * scale, 17.0F * scale,
+                          state.selectedItem == 4 ? std::array<float, 4>{0.060F, 0.150F, 0.102F, 0.88F}
+                                                  : std::array<float, 4>{0.024F, 0.044F, 0.064F, 0.82F});
+
+        std::memcpy(uiBuffer.contents, uiVertices.data(), count * sizeof(Vertex));
+        return count;
+    }
+
+    std::size_t buildHomeTextVertices(const HomeScreenState& state) {
+        constexpr float cellSize = 16.0F;
+        constexpr float atlasWidth = cellSize * 16.0F;
+        constexpr float atlasHeight = cellSize * 8.0F;
+        std::size_t count = 0;
+        const float width = static_cast<float>(drawableWidth);
+        const float height = static_cast<float>(drawableHeight);
+        const float scale = std::clamp(std::min(width / 1440.0F, height / 900.0F), 0.76F, 1.28F);
+        const bool stacked = width < 980.0F * scale;
+        const auto textWidth = [](const char* text, float size) {
+            return static_cast<float>(std::strlen(text)) * size * 0.72F;
+        };
+        const auto appendString = [&](const char* text,
+                                      float x,
+                                      float y,
+                                      float size,
+                                      std::array<float, 4> color) {
+            const float advance = size * 0.72F;
+            for (const char* cursor = text; *cursor != '\0'; ++cursor) {
+                if (count + 6 > textVertices.size()) {
+                    return;
+                }
+                const unsigned char code = static_cast<unsigned char>(*cursor) & 0x7F;
+                if (*cursor != ' ') {
+                    const float originX = static_cast<float>(code % 16) * cellSize;
+                    const float originY = static_cast<float>(code / 16) * cellSize;
+                    const float u0 = (originX + 0.5F) / atlasWidth;
+                    const float v0 = (originY + 0.5F) / atlasHeight;
+                    const float u1 = (originX + cellSize - 0.5F) / atlasWidth;
+                    const float v1 = (originY + cellSize - 0.5F) / atlasHeight;
+                    textVertices[count++] = makeTextVertex(x, y, 0.0F, color, u0, v0);
+                    textVertices[count++] = makeTextVertex(x + size, y, 0.0F, color, u1, v0);
+                    textVertices[count++] = makeTextVertex(x + size, y + size, 0.0F, color, u1, v1);
+                    textVertices[count++] = makeTextVertex(x, y, 0.0F, color, u0, v0);
+                    textVertices[count++] = makeTextVertex(x + size, y + size, 0.0F, color, u1, v1);
+                    textVertices[count++] = makeTextVertex(x, y + size, 0.0F, color, u0, v1);
+                }
+                x += advance;
+            }
+        };
+        const auto appendCentered = [&](const char* text, float centerX, float y, float size, std::array<float, 4> color) {
+            appendString(text, centerX - textWidth(text, size) * 0.5F, y, size, color);
+        };
+        const auto appendRight = [&](const char* text, float rightX, float y, float size, std::array<float, 4> color) {
+            appendString(text, rightX - textWidth(text, size), y, size, color);
+        };
+
+        const std::array<float, 4> primary{0.90F, 0.96F, 1.0F, 0.96F};
+        const std::array<float, 4> dim{0.58F, 0.66F, 0.76F, 0.92F};
+        const std::array<float, 4> cyan{0.28F, 0.90F, 1.0F, 1.0F};
+        const std::array<float, 4> green{0.34F, 1.0F, 0.52F, 1.0F};
+        const std::array<float, 4> amber{1.0F, 0.78F, 0.28F, 0.98F};
+
+        appendCentered("IR-18 SIMULATOR", width * 0.5F, 28.0F * scale, 34.0F * scale, primary);
+        appendCentered("SELECT TRACK  |  SETUP CAR  |  PRESS ENTER TO RACE", width * 0.5F, 72.0F * scale, 12.0F * scale, dim);
+
+        const float gap = 34.0F * scale;
+        const float panelWidth = stacked ? width - 68.0F * scale
+                                         : std::min(520.0F * scale, width * 0.42F);
+        const float panelHeight = stacked ? 254.0F * scale : 430.0F * scale;
+        const float leftX = stacked ? 34.0F * scale : width * 0.5F - panelWidth - gap * 0.5F;
+        const float rightX = stacked ? leftX : width * 0.5F + gap * 0.5F;
+        const float leftY = stacked ? 126.0F * scale : 152.0F * scale;
+        const float rightY = stacked ? leftY + panelHeight + 22.0F * scale : leftY;
+        const float startY = stacked ? height - 64.0F * scale : leftY + panelHeight + 38.0F * scale;
+
+        appendString("TRACK", leftX + 32.0F * scale, leftY + 22.0F * scale, 17.0F * scale, state.selectedItem == 0 ? green : cyan);
+        appendRight("LEFT / RIGHT", leftX + panelWidth - 32.0F * scale, leftY + 28.0F * scale, 9.0F * scale, dim);
+        appendString("OVAL SPEEDWAY", leftX + 62.0F * scale, leftY + (stacked ? 98.0F : 126.0F) * scale,
+                     18.0F * scale, state.selectedTrack == 0 ? green : primary);
+        appendString("HIGH-SPEED AERO PLATFORM", leftX + 62.0F * scale, leftY + (stacked ? 123.0F : 154.0F) * scale,
+                     9.0F * scale, dim);
+        appendString("HILL CIRCUIT", leftX + 62.0F * scale,
+                     leftY + (stacked ? 174.0F : 226.0F) * scale, 18.0F * scale,
+                     state.selectedTrack == 1 ? green : primary);
+        appendString("NATURAL-TERRAIN ROAD COURSE", leftX + 62.0F * scale,
+                     leftY + (stacked ? 199.0F : 254.0F) * scale, 9.0F * scale, dim);
+
+        appendString("CAR SETUP", rightX + 32.0F * scale, rightY + 22.0F * scale, 17.0F * scale,
+                     state.selectedItem >= 1 && state.selectedItem <= 3 ? green : cyan);
+        appendRight("UP / DOWN SELECT", rightX + panelWidth - 32.0F * scale, rightY + 28.0F * scale, 9.0F * scale, dim);
+
+        const float rowX = rightX + 52.0F * scale;
+        const float valueX = rightX + panelWidth - 58.0F * scale;
+        const float rowTop = rightY + (stacked ? 90.0F : 112.0F) * scale;
+        const float rowStep = stacked ? 54.0F * scale : 76.0F * scale;
+        char value[32]{};
+        const char* labels[3] = {"FRONT WING", "REAR WING", "BRAKE BIAS"};
+        for (int row = 0; row < 3; ++row) {
+            const float y = rowTop + static_cast<float>(row) * rowStep;
+            const std::array<float, 4> color = state.selectedItem == row + 1 ? green : primary;
+            appendString(labels[row], rowX, y, 13.0F * scale, color);
+            if (row == 0) {
+                std::snprintf(value, sizeof(value), "%+.0F", state.frontWingSetting);
+                appendRight(value, valueX, y, 13.0F * scale, amber);
+            } else if (row == 1) {
+                std::snprintf(value, sizeof(value), "%+.0F", state.rearWingSetting);
+                appendRight(value, valueX, y, 13.0F * scale, amber);
+            } else {
+                std::snprintf(value, sizeof(value), "%.0F%%", state.brakeBias * 100.0F);
+                appendRight(value, valueX, y, 13.0F * scale, amber);
+            }
+        }
+
+        appendCentered("ENTER  START RACE", width * 0.5F, startY + 12.0F * scale, 16.0F * scale,
+                       state.selectedItem == 4 ? green : primary);
+        appendCentered("ESC MENU RETURNS HERE FROM A SESSION", width * 0.5F, height - 34.0F * scale,
+                       10.0F * scale, dim);
+
+        std::memcpy(textBuffer.contents, textVertices.data(), count * sizeof(Vertex));
         return count;
     }
 
@@ -3030,6 +4091,7 @@ bool MetalRenderer::initialize(
     float bloomQuarterWeight,
     float hudGlassBlurRadiusPx,
     float hudGlassRefractionRadiusPx,
+    int skidmarkMaxSegments,
     float cameraStartupShakeSuppressionS,
     float cameraStartupShakeFadeS,
     float cameraAsphaltShake,
@@ -3073,6 +4135,14 @@ bool MetalRenderer::initialize(
     impl_->bloomQuarterWeight = std::clamp(bloomQuarterWeight, 0.0F, 2.0F);
     impl_->hudGlassBlurRadiusPx = std::clamp(hudGlassBlurRadiusPx, 0.0F, 24.0F);
     impl_->hudGlassRefractionRadiusPx = std::clamp(hudGlassRefractionRadiusPx, 0.0F, 24.0F);
+    const int requestedSkidmarkVertices =
+        std::clamp(skidmarkMaxSegments, static_cast<int>(kSkidmarkVerticesPerMark), static_cast<int>(kMaxSkidmarkVertices));
+    impl_->skidmarkVertexCapacity =
+        static_cast<NSUInteger>(
+            std::max<int>(
+                static_cast<int>(kSkidmarkVerticesPerMark),
+                requestedSkidmarkVertices -
+                    (requestedSkidmarkVertices % static_cast<int>(kSkidmarkVerticesPerMark))));
     impl_->cameraStartupShakeSuppressionS = std::clamp(cameraStartupShakeSuppressionS, 0.0F, 5.0F);
     impl_->cameraStartupShakeFadeS = std::clamp(cameraStartupShakeFadeS, 0.0F, 3.0F);
     impl_->cameraAsphaltShake = std::clamp(cameraAsphaltShake, 0.0F, 0.05F);
@@ -3174,6 +4244,115 @@ void MetalRenderer::shutdown() {
     if (impl_->metalView != nullptr) {
         SDL_Metal_DestroyView(impl_->metalView);
         impl_->metalView = nullptr;
+    }
+}
+
+bool MetalRenderer::reloadTrackGeometry(const Track& track) {
+    @autoreleasepool {
+        return impl_->createTrackGeometry(track);
+    }
+}
+
+bool MetalRenderer::renderHome(const HomeScreenState& state) {
+    @autoreleasepool {
+        impl_->resizeIfNeeded(state.pixelWidth, state.pixelHeight);
+        id<CAMetalDrawable> drawable = [impl_->layer nextDrawable];
+        if (drawable == nil) {
+            return true;
+        }
+        if (impl_->depthTexture == nil || impl_->skyboxTexture == nil ||
+            impl_->uiBuffer == nil || impl_->textBuffer == nil) {
+            impl_->error = "Could not create the Metal home screen targets";
+            return false;
+        }
+
+        id<MTLCommandBuffer> commandBuffer = [impl_->commandQueue commandBuffer];
+        if (commandBuffer == nil) {
+            impl_->error = "Could not create Metal command buffer";
+            return false;
+        }
+
+        const Uint64 nowTicks = SDL_GetTicks();
+        if (impl_->previousRenderTicks == 0) {
+            impl_->previousRenderTicks = nowTicks;
+        }
+        const float frameDeltaSeconds =
+            std::clamp(static_cast<float>(nowTicks - impl_->previousRenderTicks) * 0.001F, 1.0F / 240.0F, 0.05F);
+        impl_->previousRenderTicks = nowTicks;
+        impl_->elapsedSeconds += frameDeltaSeconds;
+
+        impl_->finalPassDescriptor.colorAttachments[0].texture = drawable.texture;
+        impl_->finalPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+        impl_->finalPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+        impl_->finalPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.006, 0.010, 0.018, 1.0);
+        impl_->finalPassDescriptor.depthAttachment.texture = impl_->depthTexture;
+        impl_->finalPassDescriptor.depthAttachment.loadAction = MTLLoadActionDontCare;
+        impl_->finalPassDescriptor.depthAttachment.storeAction = MTLStoreActionDontCare;
+
+        id<MTLRenderCommandEncoder> finalEncoder =
+            [commandBuffer renderCommandEncoderWithDescriptor:impl_->finalPassDescriptor];
+        if (finalEncoder == nil) {
+            impl_->error = "Could not create Metal home encoder";
+            return false;
+        }
+        [finalEncoder setViewport:MTLViewport{
+                                     0.0,
+                                     0.0,
+                                     static_cast<double>(impl_->drawableWidth),
+                                     static_cast<double>(impl_->drawableHeight),
+                                     0.0,
+                                     1.0,
+                                 }];
+
+        const Mat4 identity = Mat4::identity();
+        const Mat4 textProjection = orthographic(
+            0.0F,
+            static_cast<float>(impl_->drawableWidth),
+            static_cast<float>(impl_->drawableHeight),
+            0.0F,
+            0.0F,
+            1.0F);
+        Uniforms uniforms{};
+        copyUniforms(uniforms, textProjection, identity, identity, {0.0F, 0.0F, 0.0F});
+        uniforms.renderParams[0] = static_cast<float>(impl_->drawableWidth);
+        uniforms.renderParams[1] = static_cast<float>(impl_->drawableHeight);
+        uniforms.renderParams[2] = impl_->elapsedSeconds;
+        uniforms.renderParams[3] =
+            static_cast<float>(impl_->drawableWidth) / static_cast<float>(std::max(1, impl_->drawableHeight));
+        uniforms.effectParams[0] = std::max(8.0F, impl_->hudGlassBlurRadiusPx);
+        uniforms.effectParams[1] = std::max(4.0F, impl_->hudGlassRefractionRadiusPx);
+
+        const std::size_t uiVertexCount = impl_->buildHomeUiVertices(state);
+        if (uiVertexCount > 0) {
+            [finalEncoder setRenderPipelineState:impl_->uiPipeline];
+            [finalEncoder setDepthStencilState:impl_->textDepthState];
+            [finalEncoder setVertexBuffer:impl_->uiBuffer offset:0 atIndex:0];
+            [finalEncoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
+            [finalEncoder setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:1];
+            [finalEncoder setFragmentTexture:impl_->skyboxTexture atIndex:0];
+            [finalEncoder setFragmentSamplerState:impl_->fontSampler atIndex:0];
+            [finalEncoder drawPrimitives:MTLPrimitiveTypeTriangle
+                        vertexStart:0
+                        vertexCount:static_cast<NSUInteger>(uiVertexCount)];
+        }
+
+        const std::size_t textVertexCount = impl_->buildHomeTextVertices(state);
+        if (textVertexCount > 0) {
+            [finalEncoder setRenderPipelineState:impl_->textPipeline];
+            [finalEncoder setDepthStencilState:impl_->textDepthState];
+            [finalEncoder setVertexBuffer:impl_->textBuffer offset:0 atIndex:0];
+            [finalEncoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
+            [finalEncoder setFragmentTexture:impl_->fontTexture atIndex:0];
+            [finalEncoder setFragmentSamplerState:impl_->fontSampler atIndex:0];
+            [finalEncoder drawPrimitives:MTLPrimitiveTypeTriangle
+                        vertexStart:0
+                        vertexCount:static_cast<NSUInteger>(textVertexCount)];
+        }
+
+        [finalEncoder endEncoding];
+        [commandBuffer presentDrawable:drawable];
+        [commandBuffer commit];
+        return true;
     }
 }
 
@@ -3395,12 +4574,20 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
             scene.vehicleHeightM + 2.0F,
             scene.vehicle.positionZ + carForward.z * 3.5F,
         };
+        const float shadowTexelSize =
+            (impl_->shadowFrustumExtentM * 2.0F) /
+            static_cast<float>(impl_->shadowMapSize);
+        Vec3 snappedCenter = shadowCenter;
+        snappedCenter.x =
+            std::round(snappedCenter.x / shadowTexelSize) * shadowTexelSize;
+        snappedCenter.z =
+            std::round(snappedCenter.z / shadowTexelSize) * shadowTexelSize;
         const Vec3 lightEye{
-            shadowCenter.x - sunDirection.x * impl_->shadowLightDistanceM,
-            shadowCenter.y - sunDirection.y * impl_->shadowLightDistanceM + impl_->shadowLightHeightOffsetM,
-            shadowCenter.z - sunDirection.z * impl_->shadowLightDistanceM,
+            snappedCenter.x - sunDirection.x * impl_->shadowLightDistanceM,
+            snappedCenter.y - sunDirection.y * impl_->shadowLightDistanceM + impl_->shadowLightHeightOffsetM,
+            snappedCenter.z - sunDirection.z * impl_->shadowLightDistanceM,
         };
-        const Mat4 lightView = lookAtLeftHanded(lightEye, shadowCenter, {0.0F, 1.0F, 0.0F});
+        const Mat4 lightView = lookAtLeftHanded(lightEye, snappedCenter, {0.0F, 1.0F, 0.0F});
         const Mat4 lightProjection = orthographic(
             -impl_->shadowFrustumExtentM,
             impl_->shadowFrustumExtentM,
@@ -3457,19 +4644,41 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
             [shadowEncoder setViewport:MTLViewport{0.0, 0.0, shadowViewportSize, shadowViewportSize, 0.0, 1.0}];
             [shadowEncoder setRenderPipelineState:impl_->shadowPipeline];
             [shadowEncoder setDepthStencilState:impl_->shadowDepthState];
-            const auto drawShadowMesh = [&](id<MTLBuffer> buffer, NSUInteger vertexCount, const Mat4& model) {
+            const auto drawShadowMesh = [&](
+                                            id<MTLBuffer> buffer,
+                                            NSUInteger vertexStart,
+                                            NSUInteger vertexCount,
+                                            const Mat4& model) {
                 Uniforms shadowUniforms = uniforms;
                 const Mat4 shadowMvp = multiply(shadowViewProjection, model);
                 copyUniforms(shadowUniforms, shadowMvp, model, shadowMvp, lightEye);
                 [shadowEncoder setVertexBuffer:buffer offset:0 atIndex:0];
                 [shadowEncoder setVertexBytes:&shadowUniforms length:sizeof(shadowUniforms) atIndex:1];
-                [shadowEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertexCount];
+                [shadowEncoder drawPrimitives:MTLPrimitiveTypeTriangle
+                                  vertexStart:vertexStart
+                                  vertexCount:vertexCount];
             };
-            drawShadowMesh(impl_->groundBuffer, impl_->groundVertexCount, identity);
-            drawShadowMesh(impl_->carBodyBuffer, impl_->carBodyVertexCount, carWorld);
-            drawShadowMesh(impl_->steeringWheelBuffer, impl_->steeringWheelVertexCount, steeringWheelWorld);
+            for (const ShadowGroundChunk& chunk : impl_->shadowGroundChunks) {
+                if (intersectsShadowFrustum(chunk, shadowViewProjection)) {
+                    drawShadowMesh(
+                        impl_->groundBuffer,
+                        static_cast<NSUInteger>(chunk.vertexStart),
+                        static_cast<NSUInteger>(chunk.vertexCount),
+                        identity);
+                }
+            }
+            drawShadowMesh(impl_->carBodyBuffer, 0U, impl_->carBodyVertexCount, carWorld);
+            drawShadowMesh(
+                impl_->steeringWheelBuffer,
+                0U,
+                impl_->steeringWheelVertexCount,
+                steeringWheelWorld);
             if (suspensionVertexCount > 0) {
-                drawShadowMesh(impl_->suspensionBuffer, static_cast<NSUInteger>(suspensionVertexCount), identity);
+                drawShadowMesh(
+                    impl_->suspensionBuffer,
+                    0U,
+                    static_cast<NSUInteger>(suspensionVertexCount),
+                    identity);
             }
             const auto drawShadowWheel = [&](
                                              float localX,
@@ -3481,6 +4690,7 @@ bool MetalRenderer::render(const RenderScene& scene, const DebugOverlay& overlay
                                              float hubTravelM) {
                 drawShadowMesh(
                     impl_->wheelBuffer,
+                    0U,
                     impl_->wheelVertexCount,
                     multiply(vehicleFrameWorld, wheelLocalTransform(localX, localY, localZ, frontWheel, normalLoadN, wheelRotationRadians, hubTravelM)));
             };

@@ -58,6 +58,15 @@ set(LIGHTWEIGHT_SIM_SOURCES
 
 add_executable(LightweightSim MACOSX_BUNDLE ${LIGHTWEIGHT_SIM_SOURCES})
 
+# Resource staging is a post-build step. Make config edits relink the app so a
+# JSON-only tuning change cannot leave stale files in the signed bundle.
+file(GLOB LIGHTWEIGHT_SIM_CONFIG_FILES CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/config/*.json"
+)
+set_property(TARGET LightweightSim APPEND PROPERTY LINK_DEPENDS
+    ${LIGHTWEIGHT_SIM_CONFIG_FILES}
+)
+
 target_include_directories(LightweightSim PRIVATE src)
 target_link_libraries(LightweightSim PRIVATE
     SDL3::SDL3

@@ -26,6 +26,7 @@ public:
         float bloomQuarterWeight,
         float hudGlassBlurRadiusPx,
         float hudGlassRefractionRadiusPx,
+        int skidmarkMaxSegments,
         float cameraStartupShakeSuppressionS,
         float cameraStartupShakeFadeS,
         float cameraAsphaltShake,
@@ -43,6 +44,8 @@ public:
         float cameraLongitudinalGRollScale,
         const Track& track) override;
     void shutdown() override;
+    bool reloadTrackGeometry(const Track& track) override;
+    bool renderHome(const HomeScreenState& state) override;
     bool render(const RenderScene& scene, const DebugOverlay& overlay) override;
     [[nodiscard]] const std::string& error() const override;
 

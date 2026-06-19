@@ -37,6 +37,8 @@ void GraphicsConfig::load(const ConfigFile& config) {
         config.getFloat("render.hud_glass_refraction_radius_px", hudGlassRefractionRadiusPx),
         0.0F,
         24.0F);
+    skidmarkMaxSegments =
+        std::clamp(config.getInt("render.skidmark_max_segments", skidmarkMaxSegments), 256, 2048);
     cameraStartupShakeSuppressionS = std::clamp(
         config.getFloat("render.camera_startup_shake_suppression_s", cameraStartupShakeSuppressionS),
         0.0F,
@@ -75,6 +77,7 @@ void GraphicsConfig::load(const ConfigFile& config) {
         config.getFloat("render.camera_longitudinal_g_roll_scale", cameraLongitudinalGRollScale),
         0.0F,
         0.08F);
+    activeTrack = config.getString("simulation.active_track", activeTrack);
     physicsHz = std::clamp(config.getInt("simulation.physics_hz", physicsHz), 30, 720);
     maxFrameDelta =
         std::clamp(config.getFloat("simulation.max_frame_delta", maxFrameDelta), 0.02F, 0.5F);

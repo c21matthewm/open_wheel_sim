@@ -12,9 +12,9 @@ namespace sim {
 namespace {
 
 constexpr float kGhostSampleIntervalSeconds = 1.0F / 30.0F;
-constexpr float kGrassLowSpeedDampingPerSecond = 0.18F;
-constexpr float kGrassHighSpeedDampingPerSecond = 0.50F;
-constexpr float kGrassTrapResistanceScale = 1.20F;
+constexpr float kGrassLowSpeedDampingPerSecond = 0.117F;
+constexpr float kGrassHighSpeedDampingPerSecond = 0.325F;
+constexpr float kGrassTrapResistanceScale = 1.0F;
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kTwoPi = 2.0F * kPi;
 constexpr float kWallCollisionSlopM = 0.005F;
@@ -28,18 +28,84 @@ float angleDelta(float fromRadians, float toRadians) {
     return delta - kPi;
 }
 
+int surfaceSeverity(TrackSurface surface) {
+    switch (surface) {
+        case TrackSurface::Grass:
+            return 2;
+        case TrackSurface::Apron:
+            return 1;
+        case TrackSurface::Curb:
+            return 0;
+        case TrackSurface::Asphalt:
+            return 0;
+    }
+    return 0;
+}
+
+struct WheelSurfaceSet {
+    std::array<WheelSurfaceContact, 4> contacts{};
+    float grassContactFraction = 0.0F;
+    TrackSurface mostSevereSurface = TrackSurface::Asphalt;
+    float minimumGripMultiplier = 1.0F;
+    float minimumLongitudinalGripMultiplier = 1.0F;
+};
+
+WheelSurfaceSet sampleWheelSurfaces(
+    const Track& track,
+    const Vehicle& vehicle,
+    float distanceHintM,
+    float referenceRoadHeightM) {
+    WheelSurfaceSet result;
+    const std::array<WheelContactPatch, 4> patches = vehicle.wheelContactPatchesWorld();
+    int grassContacts = 0;
+    for (std::size_t wheel = 0; wheel < patches.size(); ++wheel) {
+        TrackSample sample =
+            track.sampleNearDistance(patches[wheel].x, patches[wheel].z, distanceHintM);
+        float resistanceMultiplier = sample.resistanceMultiplier;
+        if (sample.surface == TrackSurface::Grass) {
+            resistanceMultiplier *= kGrassTrapResistanceScale;
+            ++grassContacts;
+        }
+        result.contacts[wheel] = {
+            sample.gripMultiplier,
+            sample.longitudinalGripMultiplier,
+            resistanceMultiplier,
+            sample.bankRadians,
+            sample.roadPitchRadians,
+            sample.tangentX,
+            sample.tangentZ,
+            sample.terrainHeightEnabled ? sample.heightM - referenceRoadHeightM : 0.0F,
+            sample.roadNormalX,
+            sample.roadNormalY,
+            sample.roadNormalZ,
+            sample.surfaceRoughnessM,
+            sample.curbHeightM,
+            sample.curbPhase,
+            sample.contactHeightFilterTauS,
+        };
+        if (surfaceSeverity(sample.surface) > surfaceSeverity(result.mostSevereSurface)) {
+            result.mostSevereSurface = sample.surface;
+        }
+        result.minimumGripMultiplier = std::min(result.minimumGripMultiplier, sample.gripMultiplier);
+        result.minimumLongitudinalGripMultiplier =
+            std::min(result.minimumLongitudinalGripMultiplier, sample.longitudinalGripMultiplier);
+    }
+    result.grassContactFraction = static_cast<float>(grassContacts) / static_cast<float>(patches.size());
+    return result;
+}
+
 }  // namespace
 
 RaceSession::RaceSession(TrackConfig config)
-    : track_(std::move(config)), lapTimer_(track_.lapLengthM()) {
-    telemetry_.lapLengthM = track_.lapLengthM();
+    : track_(makeTrack(std::move(config))), lapTimer_(track_->lapLengthM()) {
+    telemetry_.lapLengthM = track_->lapLengthM();
 }
 
 void RaceSession::resetVehicle(Vehicle& vehicle) {
-    const TrackPose spawn = track_.spawnPose();
+    const TrackPose spawn = track_->spawnPose();
     vehicle.reset(spawn.centerX, spawn.centerZ, spawn.yawRadians);
-    const TrackSample sample = track_.sample(spawn.centerX, spawn.centerZ);
-    lapTimer_.reset(sample.distanceM);
+    const TrackSample sample = track_->sample(spawn.centerX, spawn.centerZ);
+    lapTimer_.reset(track_->checkpointState(sample.distanceM));
     currentGhostCount_ = 0;
     currentGhostValid_ = true;
     lastGhostSampleFrame_ = renderFrameIndex_;
@@ -62,22 +128,43 @@ void RaceSession::beginRenderFrame() {
 
 void RaceSession::step(Vehicle& vehicle, const InputActions& input, float deltaSeconds) {
     TrackSample sample =
-        track_.sample(vehicle.current().positionX, vehicle.current().positionZ);
-    float resistanceMultiplier = sample.resistanceMultiplier;
-    if (sample.surface == TrackSurface::Grass) {
-        resistanceMultiplier *= kGrassTrapResistanceScale;
-    }
+        track_->sample(vehicle.current().positionX, vehicle.current().positionZ);
+    WheelSurfaceSet wheelSurfaces =
+        sampleWheelSurfaces(*track_, vehicle, sample.distanceM, sample.smoothHeightM);
     vehicle.step(
-        input, deltaSeconds, sample.gripMultiplier, sample.longitudinalGripMultiplier, resistanceMultiplier,
-        sample.bankRadians, sample.tangentX, sample.tangentZ);
+        input,
+        deltaSeconds,
+        sample.gripMultiplier,
+        sample.longitudinalGripMultiplier,
+        sample.resistanceMultiplier,
+        sample.bankRadians,
+        sample.roadPitchRadians,
+        sample.tangentX,
+        sample.tangentZ,
+        &wheelSurfaces.contacts);
 
-    sample = track_.sample(vehicle.current().positionX, vehicle.current().positionZ);
+    sample = track_->sample(vehicle.current().positionX, vehicle.current().positionZ);
     bool wallContact = false;
-    for (int iteration = 0; iteration < kWallCollisionIterations; ++iteration) {
+    const float collisionRadiusM = std::hypot(
+        vehicle.collisionHalfWidthM(),
+        vehicle.collisionHalfLengthM());
+    const BarrierSample centerOuterBarrier = track_->outerBarrier(
+        vehicle.current().positionX,
+        vehicle.current().positionZ);
+    const BarrierSample centerInnerBarrier = track_->innerBarrier(
+        vehicle.current().positionX,
+        vehicle.current().positionZ);
+    const bool requiresCornerCollisionTest =
+        centerOuterBarrier.signedDistanceM <= collisionRadiusM + kWallCollisionSlopM ||
+        centerInnerBarrier.signedDistanceM <= collisionRadiusM + kWallCollisionSlopM;
+    for (int iteration = 0;
+         requiresCornerCollisionTest && iteration < kWallCollisionIterations;
+         ++iteration) {
         struct WallHit {
             float penetrationM = 0.0F;
             float normalX = 0.0F;
             float normalZ = 0.0F;
+            float restitution = 0.0F;
             float contactOffsetX = 0.0F;
             float contactOffsetZ = 0.0F;
         };
@@ -94,24 +181,28 @@ void RaceSession::step(Vehicle& vehicle, const InputActions& input, float deltaS
             for (const float localZ : {-halfLength, halfLength}) {
                 const float contactOffsetX = rightX * localX + forwardX * localZ;
                 const float contactOffsetZ = rightZ * localX + forwardZ * localZ;
-                const TrackSample cornerSample =
-                    track_.sample(state.positionX + contactOffsetX, state.positionZ + contactOffsetZ);
-                const float outerPenetration = cornerSample.lateralOffsetM - track_.outerWallOffsetM();
+                const float sampleX = state.positionX + contactOffsetX;
+                const float sampleZ = state.positionZ + contactOffsetZ;
+                const BarrierSample outerBarrier = track_->outerBarrier(sampleX, sampleZ);
+                const float outerPenetration = -outerBarrier.signedDistanceM;
                 if (outerPenetration > deepestHit.penetrationM) {
                     deepestHit = {
                         outerPenetration,
-                        cornerSample.rightX,
-                        cornerSample.rightZ,
+                        outerBarrier.normalX,
+                        outerBarrier.normalZ,
+                        outerBarrier.restitution,
                         contactOffsetX,
                         contactOffsetZ,
                     };
                 }
-                const float innerPenetration = track_.innerBarrierOffsetM() - cornerSample.lateralOffsetM;
+                const BarrierSample innerBarrier = track_->innerBarrier(sampleX, sampleZ);
+                const float innerPenetration = -innerBarrier.signedDistanceM;
                 if (innerPenetration > deepestHit.penetrationM) {
                     deepestHit = {
                         innerPenetration,
-                        -cornerSample.rightX,
-                        -cornerSample.rightZ,
+                        innerBarrier.normalX,
+                        innerBarrier.normalZ,
+                        innerBarrier.restitution,
                         contactOffsetX,
                         contactOffsetZ,
                     };
@@ -126,26 +217,28 @@ void RaceSession::step(Vehicle& vehicle, const InputActions& input, float deltaS
             deepestHit.normalX,
             deepestHit.normalZ,
             deepestHit.penetrationM + kWallCollisionSlopM,
-            track_.config().wallRestitution,
+            deepestHit.restitution,
             deepestHit.contactOffsetX,
             deepestHit.contactOffsetZ);
         wallContact = true;
     }
-    sample = track_.sample(vehicle.current().positionX, vehicle.current().positionZ);
+    sample = track_->sample(vehicle.current().positionX, vehicle.current().positionZ);
+    wheelSurfaces = sampleWheelSurfaces(*track_, vehicle, sample.distanceM, sample.smoothHeightM);
 
-    if (sample.surface == TrackSurface::Grass) {
+    if (wheelSurfaces.grassContactFraction > 0.0F) {
         const float speedBlend =
             std::clamp((vehicle.current().speedMps - 8.0F) / 22.0F, 0.0F, 1.0F);
         const float grassDamping =
             kGrassLowSpeedDampingPerSecond +
             (kGrassHighSpeedDampingPerSecond - kGrassLowSpeedDampingPerSecond) * speedBlend;
-        vehicle.applyVelocityDamping(grassDamping, deltaSeconds);
-        sample = track_.sample(vehicle.current().positionX, vehicle.current().positionZ);
+        vehicle.applyVelocityDamping(grassDamping * wheelSurfaces.grassContactFraction, deltaSeconds);
+        sample = track_->sample(vehicle.current().positionX, vehicle.current().positionZ);
+        wheelSurfaces = sampleWheelSurfaces(*track_, vehicle, sample.distanceM, sample.smoothHeightM);
     }
 
-    const bool validRacingSurface = sample.surface == TrackSurface::Asphalt && !wallContact;
+    const bool validRacingSurface = sample.surface != TrackSurface::Grass && !wallContact;
     const LapState beforeLap = lapTimer_.state();
-    lapTimer_.update(sample.distanceM, validRacingSurface, deltaSeconds);
+    lapTimer_.update(track_->checkpointState(sample.distanceM), validRacingSurface, deltaSeconds);
     const LapState& afterLap = lapTimer_.state();
 
     if (!beforeLap.active && afterLap.active) {
@@ -169,7 +262,11 @@ void RaceSession::step(Vehicle& vehicle, const InputActions& input, float deltaS
         appendGhostSample(vehicle.current(), afterLap.currentLapSeconds, false);
     }
 
-    refreshTelemetry(sample, wallContact);
+    TrackSample telemetrySample = sample;
+    telemetrySample.surface = wheelSurfaces.mostSevereSurface;
+    telemetrySample.gripMultiplier = wheelSurfaces.minimumGripMultiplier;
+    telemetrySample.longitudinalGripMultiplier = wheelSurfaces.minimumLongitudinalGripMultiplier;
+    refreshTelemetry(telemetrySample, wallContact);
 }
 
 void RaceSession::refreshTelemetry(const TrackSample& sample, bool wallContact) {
@@ -177,11 +274,11 @@ void RaceSession::refreshTelemetry(const TrackSample& sample, bool wallContact) 
     telemetry_.surface = sample.surface;
     telemetry_.lateralOffsetM = sample.lateralOffsetM;
     telemetry_.progressM = sample.distanceM;
-    telemetry_.lapLengthM = track_.lapLengthM();
+    telemetry_.lapLengthM = track_->lapLengthM();
     telemetry_.gripMultiplier = sample.gripMultiplier;
     telemetry_.longitudinalGripMultiplier = sample.longitudinalGripMultiplier;
     telemetry_.bankRadians = sample.bankRadians;
-    telemetry_.vehicleHeightM = sample.heightM;
+    telemetry_.vehicleHeightM = sample.smoothHeightM;
     telemetry_.wallContact = wallContact;
     updateGhostPose();
 }
@@ -234,14 +331,14 @@ void RaceSession::updateGhostPose() {
     const float x = previous.positionX + (next.positionX - previous.positionX) * alpha;
     const float z = previous.positionZ + (next.positionZ - previous.positionZ) * alpha;
     const float yaw = previous.yawRadians + angleDelta(previous.yawRadians, next.yawRadians) * alpha;
-    const TrackSample sample = track_.sample(x, z);
+    const TrackSample sample = track_->sample(x, z);
 
     telemetry_.ghost = {
         true,
         x,
         z,
         yaw,
-        sample.heightM,
+        sample.smoothHeightM,
         sample.bankRadians,
     };
 }

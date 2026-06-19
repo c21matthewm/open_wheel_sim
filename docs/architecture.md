@@ -15,26 +15,47 @@ re-enumeration.
 
 `Vehicle` is the current replaceable physics implementation. It is configured
 through `VehicleConfig` and exposes telemetry for speed, tire slip, per-wheel
-loads, tire usage, drivetrain force, braking force, ride heights, hub travel,
-chassis heave/pitch/roll, drag, ride-height-sensitive downforce, RPM, gear,
-dynamic wheel angular velocity, and visual wheel rotation. It is now a
-lightweight sprung/unsprung four-corner model with banked-track lateral gravity
-and effective-normal-load adjustment, degressive load-sensitive tire limits,
-static mirrored camber thrust, solver-owned front pneumatic/mechanical trail
-aligning moment, load/speed-dependent tire relaxation length, dynamic slip
-ratio, Pacejka-lite tire force curves, suspension spring/damper/anti-roll-bar
-loads, IMS-stacked gearing, and analytic current-platform ground-effect aero
+loads, tire usage, tire temperature/wear, drivetrain force, fuel burn, braking
+force, ride heights, hub travel, chassis heave/pitch/roll, drag,
+ride-height-sensitive downforce, RPM, gear, dynamic wheel angular velocity, and
+visual wheel rotation. It is now a lightweight sprung/unsprung four-corner
+model with filtered per-wheel terrain-contact heights/normals,
+banked-track lateral gravity and effective-normal-load adjustment,
+degressive load-sensitive tire limits, suspension-coupled dynamic camber gain
+with mirrored solver-side camber thrust,
+solver-owned front/rear pneumatic/mechanical trail aligning moment,
+load/speed-dependent tire relaxation length, dynamic slip ratio, Pacejka-lite
+tire force curves, tire wear, suspension spring/damper/anti-roll-bar loads,
+bi-linear bump/rebound damping,
+fuel-backed Lean/Standard/Rich engine maps, IMS-stacked gearing, runtime wing
+and brake-bias setup offsets, and analytic current-platform ground-effect aero
 with config-backed Speedway/Road Course package presets and CoP migration. The
 implementation remains compact and replaceable rather than a full commercial
 vehicle-dynamics solver.
 
-`Track` defines the procedural stadium oval and is the shared source of truth
-for centerline poses, banking, surface classification, lap progress, and reset
-position. `RaceSession` samples the track during fixed physics steps, applies
-surface multipliers, passes banking into vehicle physics, applies yaw-aware
-four-corner wall containment for the outer and visible inner barrier loops,
-applies grass-trap damping, records the current valid lap into a fixed-size
-ghost buffer, and advances `LapTimer` through four ordered checkpoints.
+`Track` is the polymorphic game-facing track interface. `OvalTrack` owns the
+four-turn speedway centerline, banking, surface, checkpoint, spawn, and signed
+inner/outer barrier-field math. `HillCircuitTrack` owns the procedural
+3.6 km natural-terrain road circuit centerline, elevation spline, variable
+camber, curb/grass runoff surfaces, armco-style barrier fields, spawn, and
+checkpoint state. `RaceSession` owns a `std::unique_ptr<Track>` produced by
+track config and samples the track center and all four wheel contact patches
+during fixed physics steps, applies per-wheel surface multipliers, passes
+banking, road pitch, and relative contact-patch height into vehicle physics,
+applies yaw-aware four-corner wall
+containment from track-returned `BarrierSample` fields, applies grass-trap
+damping, records the current valid lap into a fixed-size ghost buffer, and
+advances `LapTimer` through track-provided checkpoint state.
+`TrackSample` remains a trivially copyable POD hot-path result: surface type is
+stored as an enum, contact height/normal/roughness are scalar fields, and no
+string/vector allocations occur during physics steps.
+Hill wheel-patch queries use the exact center sample's lap distance as an O(1)
+local-segment hint. Wall collision first compares center barrier clearance with
+the vehicle's full collision radius; the exact iterative four-corner solver is
+only entered when contact is possible.
+The Metal renderer dispatches static track mesh generation by concrete track
+type, then draws both tracks through the same world material, HDR, shadow, and
+post-processing pipelines.
 
 `SoundManager` owns the SDL3 audio stream. It does not load audio files; it
 synthesizes a high-revving combustion engine layer from vehicle RPM/throttle
@@ -46,18 +67,24 @@ impact thuds from vehicle/input/race telemetry.
 pipelines, static procedural meshes, dynamic smoke vertices, configurable 2x
 default MSAA HDR/depth scene targets, resolved HDR/bloom/shadow targets, a
 configurable 2048x2048 default cached sun shadow map with configurable local
-frustum/light placement, and generated SDF font texture. It builds a
+frustum/light placement, texel-grid-snapped shadow centers, static
+ground-shadow draw ranges with exact light-frustum AABB culling, and generated
+SDF font texture. It builds a
 screen-space procedural sky pass, the oval, racing surface
-detail, catch fencing, grandstands, car body mesh, animated steering wheel
-mesh, and reusable wheel mesh from code and generated OBJ assets. World
-vertices carry material tags and local positions so the Metal
+detail, variable-width IMS oval asphalt, pit lane/frontstretch geometry,
+catch fencing, grandstands, Pagoda-style scoring tower, car body mesh,
+animated steering wheel mesh, and reusable wheel mesh from code and generated
+OBJ assets. The pit lane, wall, box markings, garages, and Yard of Bricks are
+baked into the static world vertex buffer, so they do not add render passes or
+per-frame CPU work. World vertices carry material tags and local positions so
+the Metal
 shader can combine mipmapped albedo/normal textures with deterministic shader
 detail: asphalt groove/edge markings, contact-shadow grounding, livery
 stripes/number masks, pearl metallic paint, multi-layer clearcoat, carbon
-weave, tire scuffing, metal highlights, visor reflections, brake-light
-emission, clean metallic brake-disc shading, smoke/spark materials, and
-grandstand variation. Exhaust flame meshes and rear-exhaust heat shimmer are
-not rendered.
+weave, tire scuffing, procedural brick shading for the start/finish strip,
+metal highlights, visor reflections, brake-light emission, clean metallic
+brake-disc shading, smoke/spark materials, and grandstand variation. Exhaust
+flame meshes and rear-exhaust heat shimmer are not rendered.
 
 The renderer draws the generated sky first, then depth-tested world geometry,
 the car body, animated steering wheel, four transformed smooth-normal wheels,

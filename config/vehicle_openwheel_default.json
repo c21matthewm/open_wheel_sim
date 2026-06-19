@@ -48,6 +48,9 @@
     "thermal_optimal_c": 95.0,
     "thermal_window_c": 35.0,
     "thermal_grip_min": 0.72,
+    "wear_min_grip": 0.84,
+    "wear_sliding_rate_per_work": 0.000020,
+    "wear_wheelspin_rate_per_work": 0.000002,
     "front_roll_stiffness_fraction": 0.52
   },
   "suspension": {
@@ -55,6 +58,13 @@
     "rear_spring_rate_n_per_m": 110000.0,
     "front_damper_n_per_mps": 8800.0,
     "rear_damper_n_per_mps": 9800.0,
+    "front_damper_bump_n_per_mps": 6500.0,
+    "front_damper_rebound_n_per_mps": 9500.0,
+    "rear_damper_bump_n_per_mps": 7200.0,
+    "rear_damper_rebound_n_per_mps": 11000.0,
+    "longitudinal_load_transfer_tau_s": 0.08,
+    "front_camber_gain_deg_per_m": 12.0,
+    "rear_camber_gain_deg_per_m": 8.0,
     "front_anti_roll_bar_n_per_m": 38000.0,
     "rear_anti_roll_bar_n_per_m": 34000.0,
     "front_arb_nm_per_rad": 18000.0,
@@ -101,7 +111,19 @@
       [0.995, 0.95],
       [1.00, 0.00]
     ],
-    "automatic_transmission": true
+    "automatic_transmission": true,
+    "fuel_capacity_gallons": 18.5,
+    "fuel_initial_gallons": 18.5,
+    "fuel_burn_gal_per_s_at_redline": 0.014,
+    "fuel_average_burn_response_hz": 0.12,
+    "fuel_idle_load_factor": 0.14,
+    "fuel_idle_rpm_factor": 0.35,
+    "engine_map_lean_fuel_multiplier": 0.88,
+    "engine_map_standard_fuel_multiplier": 1.0,
+    "engine_map_rich_fuel_multiplier": 1.15,
+    "engine_map_lean_torque_multiplier": 0.96,
+    "engine_map_standard_torque_multiplier": 1.0,
+    "engine_map_rich_torque_multiplier": 1.035
   },
   "brakes": {
     "max_brake_force_n": 22000.0,
@@ -150,5 +172,16 @@
   },
   "resistance": {
     "rolling_resistance_n": 160.0
+  },
+  "setup": {
+    "front_wing_setting": 0.0,
+    "rear_wing_setting": 0.0,
+    "wing_setting_min": -3.0,
+    "wing_setting_max": 3.0,
+    "front_wing_aero_balance_per_step": 0.012,
+    "front_wing_cornering_stiffness_per_step": 0.018,
+    "rear_wing_downforce_per_step": 0.025,
+    "rear_wing_drag_per_step": 0.030,
+    "rear_wing_cornering_stiffness_per_step": 0.016
   }
 }

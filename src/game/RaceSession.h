@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 
 #include "game/LapTimer.h"
 #include "game/Track.h"
@@ -43,7 +44,7 @@ public:
     void beginRenderFrame();
     void step(Vehicle& vehicle, const InputActions& input, float deltaSeconds);
 
-    [[nodiscard]] const Track& track() const { return track_; }
+    [[nodiscard]] const Track& track() const { return *track_; }
     [[nodiscard]] const RaceTelemetry& telemetry() const { return telemetry_; }
 
 private:
@@ -60,7 +61,7 @@ private:
     void updateGhostPose();
 
     static constexpr int kMaxGhostSamples = 2048;
-    Track track_;
+    std::unique_ptr<Track> track_;
     LapTimer lapTimer_;
     RaceTelemetry telemetry_;
     std::array<GhostSample, kMaxGhostSamples> currentGhost_{};

@@ -32,9 +32,12 @@ struct MenuOverlayState {
     float keyboardSteerRate = 0.0F;
     float keyboardReturnRate = 0.0F;
     float brakeBias = 0.0F;
+    float frontWingSetting = 0.0F;
+    float rearWingSetting = 0.0F;
     bool automaticShift = false;
     bool ghostAvailable = false;
     const char* aeroPresetName = "SPEEDWAY";
+    const char* engineMapName = "STANDARD";
 };
 
 class DebugOverlay {
@@ -97,7 +100,7 @@ private:
 
     std::array<OverlayLine, kMaxLines> lines_{};
     int lineCount_ = 0;
-    bool visible_ = true;
+    bool visible_ = false;
     bool diagnosticsVisible_ = true;
 };
 

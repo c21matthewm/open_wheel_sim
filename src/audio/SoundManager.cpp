@@ -92,7 +92,7 @@ void SoundManager::update(
         std::abs(vehicle.frontSlipAngleRadians),
         std::abs(vehicle.rearSlipAngleRadians));
     float scrub =
-        std::clamp((tireUsage - 0.82F) * 2.0F + (slipAngle - 0.06F) * 4.2F, 0.0F, 1.0F);
+        std::clamp((tireUsage - 0.65F) * 2.2F + (slipAngle - 0.045F) * 4.2F, 0.0F, 1.0F);
     if (race.surface == TrackSurface::Grass) {
         scrub = std::max(scrub, std::clamp(vehicle.speedMps / 42.0F, 0.0F, 1.0F) * 0.72F);
     }

@@ -28,6 +28,7 @@ public:
         float bloomQuarterWeight,
         float hudGlassBlurRadiusPx,
         float hudGlassRefractionRadiusPx,
+        int skidmarkMaxSegments,
         float cameraStartupShakeSuppressionS,
         float cameraStartupShakeFadeS,
         float cameraAsphaltShake,
@@ -45,6 +46,8 @@ public:
         float cameraLongitudinalGRollScale,
         const Track& track) = 0;
     virtual void shutdown() = 0;
+    virtual bool reloadTrackGeometry(const Track& track) = 0;
+    virtual bool renderHome(const HomeScreenState& state) = 0;
     virtual bool render(const RenderScene& scene, const DebugOverlay& overlay) = 0;
     [[nodiscard]] virtual const std::string& error() const = 0;
 };

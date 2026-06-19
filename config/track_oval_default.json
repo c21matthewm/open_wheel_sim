@@ -1,36 +1,57 @@
 {
   "track": {
-    "name": "2.5-Mile Test Oval"
+    "name": "2.5-Mile Test Oval",
+    "type": "oval"
   },
   "geometry": {
     "straight_length_m": 1005.84,
     "short_chute_length_m": 201.168,
     "corner_radius_m": 256.135,
-    "road_width_m": 16.0,
-    "apron_width_m": 8.0,
-    "outer_wall_gap_m": 1.5,
-    "inner_wall_gap_m": 12.0,
-    "outer_wall_height_m": 1.2,
+    "road_width_m": 16.764,
+    "turn_road_width_m": 18.288,
+    "straight_road_width_m": 15.240,
+    "apron_width_m": 6.096,
+    "outer_wall_gap_m": 0.610,
+    "inner_wall_gap_m": 9.144,
+    "outer_wall_height_m": 0.914,
     "banking_degrees": 9.2,
-    "bank_transition_fraction": 0.12,
-    "bank_transition_runout_m": 50.0
+    "bank_transition_fraction": 0.09,
+    "bank_transition_runout_m": 91.44,
+    "pit_lane_offset_m": 11.0,
+    "pit_lane_width_m": 7.925,
+    "pit_lane_start_m": 20.0,
+    "pit_lane_end_m": 422.0,
+    "pit_box_count": 33,
+    "pit_box_depth_m": 4.267,
+    "pit_wall_height_m": 1.067,
+    "yard_of_bricks_width_m": 0.914,
+    "yard_of_bricks_position_m": 304.8
   },
   "timing": {
-    "spawn_distance_before_start_m": 25.0
+    "spawn_distance_before_start_m": 40.0
   },
   "surfaces": {
     "asphalt_grip_multiplier": 1.0,
-    "apron_grip_multiplier": 0.88,
-    "grass_grip_multiplier": 0.30,
-    "grass_longitudinal_grip_multiplier": 1.45,
+    "apron_grip_multiplier": 0.92,
+    "grass_grip_multiplier": 0.32,
+    "grass_longitudinal_grip_multiplier": 1.65,
     "asphalt_resistance_multiplier": 1.0,
-    "apron_resistance_multiplier": 1.5,
-    "grass_resistance_multiplier": 12.0
+    "apron_resistance_multiplier": 1.25,
+    "grass_resistance_multiplier": 6.5
+  },
+  "terrain": {
+    "terrain_height_enabled": true,
+    "asphalt_roughness_m": 0.004,
+    "oval_seam_amp_m": 0.008,
+    "oval_undulation_amp_m": 0.006,
+    "curb_height_m": 0.045,
+    "contact_height_filter_tau_s": 0.035
   },
   "barrier": {
     "restitution": 0.12
   },
   "render": {
     "segments": 512
-  }
+  },
+  "checkpoints_m": [304.8, 1310.64, 2316.48, 3322.32]
 }

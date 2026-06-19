@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game/Track.h"
+
 namespace sim {
 
 struct LapState {
@@ -19,8 +21,10 @@ public:
     explicit LapTimer(float lapLengthM);
 
     void reset(float progressM);
+    void reset(const CheckpointState& checkpoint);
     void resetRecords();
     void update(float progressM, bool onRacingSurface, float deltaSeconds);
+    void update(const CheckpointState& checkpoint, bool onRacingSurface, float deltaSeconds);
 
     [[nodiscard]] const LapState& state() const { return state_; }
 
@@ -32,6 +36,7 @@ private:
 
     float lapLengthM_ = 1.0F;
     float previousProgressM_ = 0.0F;
+    float startFinishDistanceM_ = 0.0F;
     bool initialized_ = false;
     LapState state_;
 };

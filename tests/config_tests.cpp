@@ -63,6 +63,7 @@ int main(int argc, char** argv) {
         !near(graphicsConfig.bloomQuarterWeight, 0.98F) ||
         !near(graphicsConfig.hudGlassBlurRadiusPx, 8.0F) ||
         !near(graphicsConfig.hudGlassRefractionRadiusPx, 7.0F) ||
+        graphicsConfig.skidmarkMaxSegments != 2048 ||
         !near(graphicsConfig.cameraStartupShakeSuppressionS, 1.25F) ||
         !near(graphicsConfig.cameraStartupShakeFadeS, 0.75F) ||
         !near(graphicsConfig.cameraAsphaltShake, 0.0F) ||
@@ -77,7 +78,8 @@ int main(int argc, char** argv) {
         !near(graphicsConfig.cameraTraumaDecay, 3.0F) ||
         !near(graphicsConfig.cameraBankRollScale, 0.30F) ||
         !near(graphicsConfig.cameraLateralGRollScale, 0.0F) ||
-        !near(graphicsConfig.cameraLongitudinalGRollScale, 0.0F)) {
+        !near(graphicsConfig.cameraLongitudinalGRollScale, 0.0F) ||
+        graphicsConfig.activeTrack != "oval") {
         std::cerr << "Graphics/render performance config did not load expected defaults\n";
         return 1;
     }
@@ -155,7 +157,17 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.tireThermalOptimalC, 95.0F) ||
         !near(vehicleConfig.tireThermalWindowC, 35.0F) ||
         !near(vehicleConfig.tireThermalGripMin, 0.72F) ||
+        !near(vehicleConfig.tireWearMinGrip, 0.84F) ||
+        !near(vehicleConfig.tireWearSlidingRatePerWork, 0.000020F) ||
+        !near(vehicleConfig.tireWearWheelspinRatePerWork, 0.000002F) ||
         !near(vehicleConfig.frontSpringRateNPerM, 100000.0F) ||
+        !near(vehicleConfig.frontDamperBumpNPerMps, 6500.0F) ||
+        !near(vehicleConfig.frontDamperReboundNPerMps, 9500.0F) ||
+        !near(vehicleConfig.rearDamperBumpNPerMps, 7200.0F) ||
+        !near(vehicleConfig.rearDamperReboundNPerMps, 11000.0F) ||
+        !near(vehicleConfig.longitudinalLoadTransferTauS, 0.08F) ||
+        !near(vehicleConfig.frontCamberGainRadiansPerM, 12.0F * std::numbers::pi_v<float> / 180.0F) ||
+        !near(vehicleConfig.rearCamberGainRadiansPerM, 8.0F * std::numbers::pi_v<float> / 180.0F) ||
         !near(vehicleConfig.frontAntiRollBarNmPerRad, 18000.0F) ||
         !near(vehicleConfig.rearAntiRollBarNmPerRad, 12000.0F) ||
         !vehicleConfig.useDynamicRollStiffnessFraction ||
@@ -180,8 +192,30 @@ int main(int argc, char** argv) {
         !near(vehicleConfig.highSpeedSteerScale, 0.45F) ||
         !near(vehicleConfig.steerSpeedThresholdMps, 90.0F) ||
         !near(vehicleConfig.driveFrontFraction, 0.0F) ||
+        !near(vehicleConfig.fuelCapacityGallons, 18.5F) ||
+        !near(vehicleConfig.fuelInitialGallons, 18.5F) ||
+        !near(vehicleConfig.fuelBurnGallonsPerSecondAtRedline, 0.014F) ||
+        !near(vehicleConfig.fuelAverageBurnResponseHz, 0.12F) ||
+        !near(vehicleConfig.fuelIdleLoadFactor, 0.14F) ||
+        !near(vehicleConfig.fuelIdleRpmFactor, 0.35F) ||
+        !near(vehicleConfig.engineMapLeanFuelMultiplier, 0.88F) ||
+        !near(vehicleConfig.engineMapRichFuelMultiplier, 1.15F) ||
+        !near(vehicleConfig.engineMapLeanTorqueMultiplier, 0.96F) ||
+        !near(vehicleConfig.engineMapRichTorqueMultiplier, 1.035F) ||
+        !near(vehicleConfig.frontWingSetting, 0.0F) ||
+        !near(vehicleConfig.rearWingSetting, 0.0F) ||
+        !near(vehicleConfig.frontWingAeroBalancePerStep, 0.012F) ||
+        !near(vehicleConfig.frontWingCorneringStiffnessPerStep, 0.018F) ||
+        !near(vehicleConfig.rearWingDownforcePerStep, 0.025F) ||
+        !near(vehicleConfig.rearWingDragPerStep, 0.030F) ||
+        !near(vehicleConfig.rearWingCorneringStiffnessPerStep, 0.016F) ||
         !vehicleConfig.automaticShift) {
         std::cerr << "Expanded vehicle config lookup failed\n";
+        return 1;
+    }
+    if (sim::Vehicle::aeroYawAlignmentFactor(0.0F, 0.0F, 80.0F) <= 0.98F ||
+        sim::Vehicle::aeroYawAlignmentFactor(0.0F, 80.0F, 0.0F) >= 0.02F) {
+        std::cerr << "Aero yaw damping heading alignment factor is not forward/sideways gated\n";
         return 1;
     }
     const float sixthGearRedlineMps =
@@ -219,6 +253,30 @@ int main(int argc, char** argv) {
     sim::Vehicle vehicle(vehicleConfig);
     sim::InputActions input;
     input.throttle = 1.0F;
+
+    sim::Vehicle filteredTransferVehicle(vehicleConfig);
+    sim::InputActions filteredTransferInput;
+    filteredTransferInput.throttle = 1.0F;
+    float peakInstantaneousTransferN = 0.0F;
+    float peakFilteredTransferN = 0.0F;
+    for (int step = 0; step < 60; ++step) {
+        const float instantaneousTransferN =
+            vehicleConfig.massKg * filteredTransferVehicle.current().longitudinalG * 9.80665F *
+            vehicleConfig.centerOfMassHeightM / vehicleConfig.wheelbaseM;
+        peakInstantaneousTransferN =
+            std::max(peakInstantaneousTransferN, std::abs(instantaneousTransferN));
+        filteredTransferVehicle.step(filteredTransferInput, kPhysicsDt);
+        peakFilteredTransferN = std::max(
+            peakFilteredTransferN,
+            std::abs(filteredTransferVehicle.current().filtered_long_load_transfer_n));
+    }
+    if (peakInstantaneousTransferN < 10.0F ||
+        peakFilteredTransferN >= peakInstantaneousTransferN * 0.98F) {
+        std::cerr << "Longitudinal load transfer did not build progressively during launch"
+                  << " instantaneousPeak=" << peakInstantaneousTransferN
+                  << " filteredPeak=" << peakFilteredTransferN << '\n';
+        return 1;
+    }
 
     sim::Vehicle launchVehicle(vehicleConfig);
     sim::InputActions launchInput;
@@ -336,7 +394,40 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    sim::Vehicle camberGainVehicle(vehicleConfig);
+    sim::InputActions camberGainInput;
+    camberGainInput.throttle = 1.0F;
+    for (int step = 0; step < stepsForSeconds(2.5F); ++step) {
+        camberGainVehicle.step(camberGainInput, kPhysicsDt);
+    }
+    camberGainInput.throttle = 0.0F;
+    camberGainInput.brake = 1.0F;
+    float mostNegativeFrontCamber = vehicleConfig.camberAngleFrontRadians;
+    float maximumFrontCompressionTravel = 0.0F;
+    for (int step = 0; step < stepsForSeconds(0.9F); ++step) {
+        camberGainVehicle.step(camberGainInput, kPhysicsDt);
+        mostNegativeFrontCamber = std::min({
+            mostNegativeFrontCamber,
+            camberGainVehicle.current().frontLeftCamberRadians,
+            camberGainVehicle.current().frontRightCamberRadians,
+        });
+        maximumFrontCompressionTravel = std::max({
+            maximumFrontCompressionTravel,
+            camberGainVehicle.current().frontLeftSuspensionTravelM,
+            camberGainVehicle.current().frontRightSuspensionTravelM,
+        });
+    }
+    if (maximumFrontCompressionTravel <= 0.001F ||
+        mostNegativeFrontCamber >= vehicleConfig.camberAngleFrontRadians - 0.0001F) {
+        std::cerr << "Compressed front suspension did not gain negative camber"
+                  << " maxTravel=" << maximumFrontCompressionTravel
+                  << " staticCamber=" << vehicleConfig.camberAngleFrontRadians
+                  << " mostNegativeCamber=" << mostNegativeFrontCamber << '\n';
+        return 1;
+    }
+
     float maximumLaunchEngineForceN = 0.0F;
+    const float launchFuelGallons = vehicle.current().fuelGallons;
     for (int step = 0; step < stepsForSeconds(1.0F); ++step) {
         vehicle.step(input, kPhysicsDt);
         maximumLaunchEngineForceN =
@@ -358,6 +449,67 @@ int main(int argc, char** argv) {
                   << " speedMps=" << vehicle.current().speedMps << '\n';
         return 1;
     }
+    if (vehicle.current().fuelGallons >= launchFuelGallons ||
+        vehicle.current().fuelBurnRateGps <= 0.0F ||
+        vehicle.current().engineMap != 1) {
+        std::cerr << "Fuel burn or default engine map telemetry did not update\n";
+        return 1;
+    }
+
+    struct EngineMapSample {
+        float maximumEngineForceN = 0.0F;
+        float fuelBurnRateGps = 0.0F;
+    };
+    auto launchSampleForMap = [&](int engineMap) {
+        sim::Vehicle testVehicle(vehicleConfig);
+        testVehicle.setEngineMap(engineMap);
+        sim::InputActions drive;
+        drive.throttle = 1.0F;
+        EngineMapSample sample;
+        for (int step = 0; step < stepsForSeconds(0.25F); ++step) {
+            testVehicle.step(drive, kPhysicsDt);
+            sample.maximumEngineForceN =
+                std::max(sample.maximumEngineForceN, testVehicle.current().engineForceN);
+        }
+        sample.fuelBurnRateGps = testVehicle.current().fuelBurnRateGps;
+        return sample;
+    };
+    const EngineMapSample leanMapSample = launchSampleForMap(0);
+    const EngineMapSample standardMapSample = launchSampleForMap(1);
+    const EngineMapSample richMapSample = launchSampleForMap(2);
+    if (richMapSample.maximumEngineForceN <= standardMapSample.maximumEngineForceN ||
+        leanMapSample.maximumEngineForceN >= standardMapSample.maximumEngineForceN ||
+        richMapSample.fuelBurnRateGps <= standardMapSample.fuelBurnRateGps ||
+        leanMapSample.fuelBurnRateGps >= standardMapSample.fuelBurnRateGps) {
+        std::cerr << "Engine map did not change torque and fuel burn in the expected order"
+                  << " leanForce=" << leanMapSample.maximumEngineForceN
+                  << " standardForce=" << standardMapSample.maximumEngineForceN
+                  << " richForce=" << richMapSample.maximumEngineForceN
+                  << " leanBurn=" << leanMapSample.fuelBurnRateGps
+                  << " standardBurn=" << standardMapSample.fuelBurnRateGps
+                  << " richBurn=" << richMapSample.fuelBurnRateGps << '\n';
+        return 1;
+    }
+
+    sim::Vehicle wearVehicle(vehicleConfig);
+    sim::InputActions wearInput;
+    wearInput.throttle = 1.0F;
+    wearInput.steer = 0.95F;
+    for (int step = 0; step < stepsForSeconds(4.0F); ++step) {
+        wearVehicle.step(wearInput, kPhysicsDt, 0.70F);
+    }
+    const float minimumWear = std::min({
+        wearVehicle.current().frontLeftTireWear,
+        wearVehicle.current().frontRightTireWear,
+        wearVehicle.current().rearLeftTireWear,
+        wearVehicle.current().rearRightTireWear,
+    });
+    if (minimumWear >= 0.999F || minimumWear < 0.90F) {
+        std::cerr << "Tire wear did not deplete progressively under sustained sliding"
+                  << " minWear=" << minimumWear << '\n';
+        return 1;
+    }
+
     struct AeroSample {
         float downforceN = 0.0F;
         float centerOfPressure = 0.0F;
@@ -390,6 +542,25 @@ int main(int argc, char** argv) {
                   << " roadDf=" << roadCourseAero.downforceN
                   << " speedwayCop=" << speedwayAero.centerOfPressure
                   << " roadCop=" << roadCourseAero.centerOfPressure << '\n';
+        return 1;
+    }
+    sim::Vehicle baseSetupVehicle(vehicleConfig);
+    sim::Vehicle frontWingVehicle(vehicleConfig);
+    sim::Vehicle rearWingVehicle(vehicleConfig);
+    frontWingVehicle.setFrontWingSetting(3.0F);
+    rearWingVehicle.setRearWingSetting(3.0F);
+    sim::InputActions setupDrive;
+    setupDrive.throttle = 1.0F;
+    for (int step = 0; step < stepsForSeconds(2.0F); ++step) {
+        baseSetupVehicle.step(setupDrive, kPhysicsDt);
+        frontWingVehicle.step(setupDrive, kPhysicsDt);
+        rearWingVehicle.step(setupDrive, kPhysicsDt);
+    }
+    if (frontWingVehicle.current().aeroCenterOfPressure <=
+            baseSetupVehicle.current().aeroCenterOfPressure + 0.020F ||
+        rearWingVehicle.current().downforceN <= baseSetupVehicle.current().downforceN * 1.05F ||
+        std::abs(rearWingVehicle.current().dragForceN) <= std::abs(baseSetupVehicle.current().dragForceN) * 1.05F) {
+        std::cerr << "Runtime wing setup did not alter aero balance/downforce/drag\n";
         return 1;
     }
     if (vehicle.current().rearLeftWheelAngularVelocityRadPerSec <= 0.0F ||

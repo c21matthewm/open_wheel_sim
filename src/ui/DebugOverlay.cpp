@@ -29,6 +29,30 @@ TimeParts splitTime(float totalSeconds) {
     return {minutes, clamped - static_cast<float>(minutes) * 60.0F};
 }
 
+const char* engineMapName(int engineMap) {
+    switch (engineMap) {
+        case 0:
+            return "LEAN";
+        case 2:
+            return "RICH";
+        case 1:
+        default:
+            return "STANDARD";
+    }
+}
+
+float estimatedFuelLapsRemaining(const VehicleState& vehicle, const RaceTelemetry& race) {
+    const float referenceSpeedMps = std::max(65.0F, vehicle.speedMps);
+    const float estimatedLapSeconds =
+        race.lap.bestLapSeconds > 1.0F
+            ? race.lap.bestLapSeconds
+            : race.lapLengthM / referenceSpeedMps;
+    const float burnRate = std::max(
+        {vehicle.fuelAverageBurnRateGps, vehicle.fuelBurnRateGps * 0.35F, 0.00001F});
+    const float gallonsPerLap = std::max(0.0001F, burnRate * estimatedLapSeconds);
+    return std::clamp(vehicle.fuelGallons / gallonsPerLap, 0.0F, 99.99F);
+}
+
 }  // namespace
 
 DebugOverlay::DebugOverlay(bool diagnosticsVisible) : diagnosticsVisible_(diagnosticsVisible) {}
@@ -45,20 +69,22 @@ void DebugOverlay::build(
     const char* ffbStatus) {
     lineCount_ = 0;
 
-    const float hudY = std::max(92.0F, static_cast<float>(pixelHeight) - 124.0F);
+    const float hudY = std::max(112.0F, static_cast<float>(pixelHeight) - 150.0F);
     const float centerX = static_cast<float>(pixelWidth) * 0.5F;
-    const float hudLeftTextX = std::max(18.0F, centerX - 388.0F);
-    const float hudRightTextX = std::min(centerX + 78.0F, static_cast<float>(pixelWidth) - 292.0F);
+    const float hudLeftTextX = std::max(18.0F, centerX - 438.0F);
+    const float hudRightTextX = std::min(centerX + 96.0F, static_cast<float>(pixelWidth) - 330.0F);
     const OverlayColor speedColor{0.86F, 0.94F, 1.0F, 0.95F};
     const OverlayColor gearColor{1.0F, 0.98F, 0.82F, 1.0F};
     const OverlayColor rpmColor = vehicle.rpm > 11250.0F
                                       ? OverlayColor{1.0F, 0.18F, 0.12F, 1.0F}
                                       : OverlayColor{0.62F, 1.0F, 0.72F, 0.95F};
-    addScaled(hudLeftTextX, hudY + 45.0F, 1.72F, speedColor, "%03.0F MPH", vehicle.speedMps * 2.2369363F);
-    addScaled(centerX - 27.0F, hudY + 34.0F, 3.25F, gearColor, "%d", vehicle.gear);
-    addScaled(hudRightTextX, hudY + 36.0F, 1.34F, rpmColor, "%05.0F RPM", vehicle.rpm);
-    addScaled(hudRightTextX, hudY + 58.0F, 0.88F, kDim, "LAT %+3.1FG  LONG %+3.1FG", vehicle.lateralG, vehicle.longitudinalG);
-    addScaled(hudLeftTextX, hudY + 75.0F, 0.88F, kDim, "BRK %02.0F%%  THR %02.0F%%", input.brake * 100.0F, input.throttle * 100.0F);
+    addScaled(hudLeftTextX, hudY + 54.0F, 2.04F, speedColor, "%03.0F MPH", vehicle.speedMps * 2.2369363F);
+    addScaled(centerX - 32.0F, hudY + 42.0F, 3.75F, gearColor, "%d", vehicle.gear);
+    addScaled(hudRightTextX, hudY + 42.0F, 1.58F, rpmColor, "%05.0F RPM", vehicle.rpm);
+    addScaled(hudRightTextX, hudY + 68.0F, 1.00F, kDim, "LAT %+3.1FG  LONG %+3.1FG", vehicle.lateralG, vehicle.longitudinalG);
+    addScaled(hudLeftTextX, hudY + 99.0F, 0.98F, kDim, "BRAKE        THROTTLE");
+    addScaled(hudRightTextX, hudY + 92.0F, 1.02F, kDim, "FUEL: %.2F LAPS", estimatedFuelLapsRemaining(vehicle, race));
+    addScaled(hudRightTextX, hudY + 111.0F, 1.02F, kDim, "MAP: %s", engineMapName(vehicle.engineMap));
 
     if (menu.visible) {
         const float menuX = centerX - 185.0F;
@@ -74,20 +100,32 @@ void DebugOverlay::build(
         addScaled(menuX, menuY, 1.08F, itemColor(1), "%s KEYBOARD RETURN RATE %4.2F",
             menu.selectedIndex == 1 ? ">" : " ", menu.keyboardReturnRate);
         menuY += 18.0F;
-        addScaled(menuX, menuY, 1.08F, itemColor(2), "%s BRAKE BIAS           %4.2F",
-            menu.selectedIndex == 2 ? ">" : " ", menu.brakeBias);
+        addScaled(menuX, menuY, 1.08F, itemColor(2), "%s FRONT WING          %+4.0F",
+            menu.selectedIndex == 2 ? ">" : " ", menu.frontWingSetting);
         menuY += 18.0F;
-        addScaled(menuX, menuY, 1.08F, itemColor(3), "%s AUTOMATIC TRANS     %s",
-            menu.selectedIndex == 3 ? ">" : " ", menu.automaticShift ? "ON" : "OFF");
+        addScaled(menuX, menuY, 1.08F, itemColor(3), "%s REAR WING           %+4.0F",
+            menu.selectedIndex == 3 ? ">" : " ", menu.rearWingSetting);
         menuY += 18.0F;
-        addScaled(menuX, menuY, 1.08F, itemColor(4), "%s AERO PRESET         %s",
-            menu.selectedIndex == 4 ? ">" : " ", menu.aeroPresetName);
+        addScaled(menuX, menuY, 1.08F, itemColor(4), "%s BRAKE BIAS           %4.2F",
+            menu.selectedIndex == 4 ? ">" : " ", menu.brakeBias);
         menuY += 18.0F;
-        addScaled(menuX, menuY, 1.08F, itemColor(5), "%s RESET RECORDS/GHOST  %s",
-            menu.selectedIndex == 5 ? ">" : " ", menu.ghostAvailable ? "READY" : "EMPTY");
+        addScaled(menuX, menuY, 1.08F, itemColor(5), "%s ENGINE MAP          %s",
+            menu.selectedIndex == 5 ? ">" : " ", menu.engineMapName);
         menuY += 18.0F;
-        addScaled(menuX, menuY, 1.08F, itemColor(6), "%s CLOSE MENU",
-            menu.selectedIndex == 6 ? ">" : " ");
+        addScaled(menuX, menuY, 1.08F, itemColor(6), "%s AUTOMATIC TRANS     %s",
+            menu.selectedIndex == 6 ? ">" : " ", menu.automaticShift ? "ON" : "OFF");
+        menuY += 18.0F;
+        addScaled(menuX, menuY, 1.08F, itemColor(7), "%s AERO PRESET         %s",
+            menu.selectedIndex == 7 ? ">" : " ", menu.aeroPresetName);
+        menuY += 18.0F;
+        addScaled(menuX, menuY, 1.08F, itemColor(8), "%s RESET RECORDS/GHOST  %s",
+            menu.selectedIndex == 8 ? ">" : " ", menu.ghostAvailable ? "READY" : "EMPTY");
+        menuY += 18.0F;
+        addScaled(menuX, menuY, 1.08F, itemColor(9), "%s CLOSE MENU",
+            menu.selectedIndex == 9 ? ">" : " ");
+        menuY += 18.0F;
+        addScaled(menuX, menuY, 1.08F, itemColor(10), "%s QUIT TO HOME",
+            menu.selectedIndex == 10 ? ">" : " ");
         menuY += 24.0F;
         addScaled(menuX, menuY, 0.88F, kDim, "UP/DOWN SELECT  LEFT/RIGHT ADJUST  ENTER ACTIVATE");
     }
@@ -129,6 +167,17 @@ void DebugOverlay::build(
         vehicle.rearLeftTireTemperatureC, vehicle.rearRightTireTemperatureC,
         vehicle.frontLeftThermalGrip, vehicle.frontRightThermalGrip,
         vehicle.rearLeftThermalGrip, vehicle.rearRightThermalGrip);
+    y += kLineHeight;
+    add(12.0F, y, kDim,
+        "SLIP RATIO FL/FR/RL/RR %+5.2F %+5.2F %+5.2F %+5.2F",
+        vehicle.frontLeftLongitudinalSlip, vehicle.frontRightLongitudinalSlip,
+        vehicle.rearLeftLongitudinalSlip, vehicle.rearRightLongitudinalSlip);
+    y += kLineHeight;
+    add(12.0F, y, kDim,
+        "TIRE LIFE FL/FR/RL/RR %3.0F %3.0F %3.0F %3.0F%%  FUEL %.2F GAL  BURN %.3F GPS  MAP %s",
+        vehicle.frontLeftTireWear * 100.0F, vehicle.frontRightTireWear * 100.0F,
+        vehicle.rearLeftTireWear * 100.0F, vehicle.rearRightTireWear * 100.0F,
+        vehicle.fuelGallons, vehicle.fuelBurnRateGps, engineMapName(vehicle.engineMap));
     y += kLineHeight;
     add(12.0F, y, kDim,
         "LOAD FL/FR/RL/RR %4.1F %4.1F %4.1F %4.1F KN  AERO %4.1F KN  BRAKE BIAS %4.2F",

@@ -28,6 +28,7 @@ void InputManager::beginFrame() {
     actions_.toggleDiagnostics = false;
     actions_.toggleOverlay = false;
     actions_.toggleCamera = false;
+    actions_.toggleEngineMap = false;
     actions_.quit = false;
 }
 
@@ -58,6 +59,8 @@ void InputManager::handleEvent(const SDL_Event& event) {
         actions_.toggleOverlay = true;
     } else if (event.key.scancode == SDL_SCANCODE_C) {
         actions_.toggleCamera = true;
+    } else if (event.key.scancode == SDL_SCANCODE_M) {
+        actions_.toggleEngineMap = true;
     } else if (event.key.scancode == SDL_SCANCODE_E) {
         actions_.shiftUp = true;
     } else if (event.key.scancode == SDL_SCANCODE_Q) {
@@ -95,6 +98,8 @@ void InputManager::update(float deltaSeconds) {
     const float speedFraction =
         std::clamp(std::abs(vehicleSpeedMps_) / std::max(1.0F, keyboardHighSpeedThresholdMps_), 0.0F, 1.0F);
     const float highSpeedRateScale = 1.0F + (keyboardHighSpeedScale_ - 1.0F) * speedFraction;
+    const float maxKeyboardSteer = 1.0F + (keyboardHighSpeedScale_ - 1.0F) * speedFraction;
+    steeringTarget = std::clamp(steeringTarget, -maxKeyboardSteer, maxKeyboardSteer);
     const float steerRate = steeringTarget == 0.0F
                                 ? config_.keyboardReturnRate
                                 : config_.keyboardSteerRate * highSpeedRateScale;

@@ -22,6 +22,9 @@ constexpr float kSecondGearAutoUpshiftMinSpeedMps = 30.0F;
 constexpr float kShiftCooldownSeconds = 0.10F;
 constexpr float kAmbientTireTemperatureC = 31.0F;
 constexpr float kInitialTireTemperatureC = 82.0F;
+constexpr int kEngineMapLean = 0;
+constexpr int kEngineMapStandard = 1;
+constexpr int kEngineMapRich = 2;
 
 float dot(float ax, float az, float bx, float bz) {
     return ax * bx + az * bz;
@@ -276,6 +279,42 @@ float updatedTireTemperature(
         176.0F);
 }
 
+float tireWearGripScale(float wearRemaining, float minimumGrip) {
+    const float remaining = std::clamp(wearRemaining, 0.0F, 1.0F);
+    return std::clamp(
+        minimumGrip + (1.0F - minimumGrip) * remaining,
+        std::clamp(minimumGrip, 0.0F, 1.0F),
+        1.0F);
+}
+
+float updatedTireWearRemaining(
+    float previousWearRemaining,
+    const WheelForce& wheelForce,
+    float tireLongitudinalSpeedMps,
+    float peakSlipAngleRadians,
+    float peakSlipRatio,
+    float slidingRatePerWork,
+    float wheelspinRatePerWork,
+    float deltaSeconds) {
+    const float speedMps = std::min(std::abs(tireLongitudinalSpeedMps), 115.0F);
+    const float lateralSlipLoad = std::min(
+        std::abs(wheelForce.slipAngleRadians) / std::max(0.01F, peakSlipAngleRadians),
+        4.0F);
+    const float longitudinalSlipLoad = std::min(
+        std::abs(wheelForce.longitudinalSlip) / std::max(0.02F, peakSlipRatio),
+        4.0F);
+    const float usageWork =
+        square(std::max(0.0F, wheelForce.usage - 0.72F)) * (18.0F + speedMps * 1.15F);
+    const float slipWork =
+        square(std::max(0.0F, lateralSlipLoad - 0.85F)) * (8.0F + speedMps * 0.36F);
+    const float spinWork =
+        square(std::max(0.0F, longitudinalSlipLoad - 1.0F)) * (16.0F + speedMps * 0.62F);
+    const float wearLoss =
+        (slidingRatePerWork * (usageWork + slipWork) + wheelspinRatePerWork * spinWork) *
+        deltaSeconds;
+    return std::clamp(previousWearRemaining - wearLoss, 0.0F, 1.0F);
+}
+
 SplitForce splitByWheelLoad(float totalValue, float leftLoadN, float rightLoadN, float loadBias) {
     const float totalLoad = std::max(1.0F, leftLoadN + rightLoadN);
     const float loadShare = leftLoadN / totalLoad;
@@ -481,7 +520,17 @@ void Vehicle::resetDynamicState() {
     rpmLimiterCut_ = 0.0F;
     current_.rpm = config_.idleRpm;
     current_.gear = currentGear_;
+    current_.rpmArcStartRpm = rpmArcStartForGear(currentGear_);
+    current_.shiftUpRpm = config_.shiftUpRpm;
+    current_.redlineRpm = config_.redlineRpm;
     current_.brakeBias = config_.brakeBias;
+    current_.frontWingSetting = config_.frontWingSetting;
+    current_.rearWingSetting = config_.rearWingSetting;
+    current_.fuelGallons = std::clamp(config_.fuelInitialGallons, 0.0F, config_.fuelCapacityGallons);
+    current_.fuelBurnRateGps = 0.0F;
+    current_.fuelAverageBurnRateGps =
+        fuelBurnRate(config_.redlineRpm * 0.82F, 0.82F);
+    current_.engineMap = engineMap_;
     current_.frontRideHeightM = config_.frontStaticRideHeightM;
     current_.rearRideHeightM = config_.rearStaticRideHeightM;
     current_.aeroCenterOfPressure = config_.frontDownforceFraction;
@@ -497,6 +546,14 @@ void Vehicle::resetDynamicState() {
     current_.frontRightThermalGrip = current_.frontLeftThermalGrip;
     current_.rearLeftThermalGrip = current_.frontLeftThermalGrip;
     current_.rearRightThermalGrip = current_.frontLeftThermalGrip;
+    current_.frontLeftTireWear = 1.0F;
+    current_.frontRightTireWear = 1.0F;
+    current_.rearLeftTireWear = 1.0F;
+    current_.rearRightTireWear = 1.0F;
+    current_.frontLeftCamberRadians = config_.camberAngleFrontRadians;
+    current_.frontRightCamberRadians = config_.camberAngleFrontRadians;
+    current_.rearLeftCamberRadians = config_.camberAngleRearRadians;
+    current_.rearRightCamberRadians = config_.camberAngleRearRadians;
 }
 
 void Vehicle::reset() {
@@ -521,8 +578,10 @@ void Vehicle::step(
     float longitudinalGripMultiplier,
     float resistanceMultiplier,
     float bankRadians,
+    float roadPitchRadians,
     float trackTangentX,
-    float trackTangentZ) {
+    float trackTangentZ,
+    const std::array<WheelSurfaceContact, 4>* wheelSurfaceContacts) {
     previous_ = current_;
 
     const float safeDt = std::clamp(deltaSeconds, 0.0F, 0.05F);
@@ -545,6 +604,43 @@ void Vehicle::step(
     const float brakeInput = std::pow(clamp01(input.brake), config_.brakeGamma);
     const float absoluteLongitudinalSpeed = std::abs(longitudinalSpeed);
     const float speedSquared = square(std::hypot(current_.velocityX, current_.velocityZ));
+    const float fallbackLongitudinalGrip =
+        longitudinalGripMultiplier < 0.0F ? gripMultiplier : longitudinalGripMultiplier;
+    std::array<WheelSurfaceContact, kWheelCount> surfaceContacts{};
+    for (WheelSurfaceContact& contact : surfaceContacts) {
+        contact = {
+            gripMultiplier,
+            fallbackLongitudinalGrip,
+            resistanceMultiplier,
+            bankRadians,
+            roadPitchRadians,
+            trackTangentX,
+            trackTangentZ,
+        };
+    }
+    if (wheelSurfaceContacts != nullptr) {
+        surfaceContacts = *wheelSurfaceContacts;
+    }
+    float averageBankRadians = 0.0F;
+    float averageRoadPitchRadians = 0.0F;
+    float averageTrackTangentX = 0.0F;
+    float averageTrackTangentZ = 0.0F;
+    for (const WheelSurfaceContact& contact : surfaceContacts) {
+        averageBankRadians += contact.bankRadians;
+        averageRoadPitchRadians += contact.roadPitchRadians;
+        averageTrackTangentX += contact.tangentX;
+        averageTrackTangentZ += contact.tangentZ;
+    }
+    averageBankRadians /= static_cast<float>(kWheelCount);
+    averageRoadPitchRadians /= static_cast<float>(kWheelCount);
+    const float averageTangentLength = std::hypot(averageTrackTangentX, averageTrackTangentZ);
+    if (averageTangentLength > 0.01F) {
+        averageTrackTangentX /= averageTangentLength;
+        averageTrackTangentZ /= averageTangentLength;
+    } else {
+        averageTrackTangentX = trackTangentX;
+        averageTrackTangentZ = trackTangentZ;
+    }
 
     updateGear(engineRpmForDrivenWheels(), input);
     const float engineRpm = engineRpmForDrivenWheels();
@@ -567,6 +663,15 @@ void Vehicle::step(
     if (limiterBlend <= 0.0F) {
         rpmLimiterCut_ *= std::exp(-safeDt * 12.0F);
     }
+    const float burnRateGps = fuelBurnRate(engineRpm, throttle);
+    current_.fuelGallons = std::max(0.0F, current_.fuelGallons - burnRateGps * safeDt);
+    const float burnAverageResponse =
+        1.0F - std::exp(-safeDt * config_.fuelAverageBurnResponseHz);
+    current_.fuelAverageBurnRateGps +=
+        (burnRateGps - current_.fuelAverageBurnRateGps) * burnAverageResponse;
+    current_.fuelBurnRateGps = burnRateGps;
+    current_.engineMap = engineMap_;
+    const float engineFuelScale = current_.fuelGallons > 0.0F ? 1.0F : 0.0F;
 
     const float rearDistance = config_.wheelbaseM * config_.frontWeightFraction;
     const float frontDistance = config_.wheelbaseM - rearDistance;
@@ -614,12 +719,30 @@ void Vehicle::step(
         current_.relaxedSlipRatio[kRearLeft],
         current_.relaxedSlipRatio[kRearRight],
     }};
+    std::array<float, kWheelCount> roadHeight{{
+        current_.frontLeftRoadHeightM,
+        current_.frontRightRoadHeightM,
+        current_.rearLeftRoadHeightM,
+        current_.rearRightRoadHeightM,
+    }};
+    std::array<float, kWheelCount> roadHeightVelocity{};
+    for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
+        const float targetRoadHeight =
+            std::clamp(surfaceContacts[wheel].roadHeightM, -0.50F, 0.50F);
+        const float previousRoadHeight = roadHeight[wheel];
+        const float tau = std::max(0.0F, surfaceContacts[wheel].contactHeightFilterTauS);
+        const float response = tau <= 0.0005F ? 1.0F : 1.0F - std::exp(-safeDt / tau);
+        roadHeight[wheel] += (targetRoadHeight - roadHeight[wheel]) * response;
+        roadHeightVelocity[wheel] = (roadHeight[wheel] - previousRoadHeight) / safeDt;
+    }
 
-    const float bankSin = std::sin(bankRadians);
-    const float bankCos = std::cos(bankRadians);
+    const float bankSin = std::sin(averageBankRadians);
+    const float bankCos = std::cos(averageBankRadians);
+    const float pitchSin = std::sin(averageRoadPitchRadians);
+    const float pitchCos = std::cos(averageRoadPitchRadians);
     const float effectiveGravity = std::max(
         1.0F,
-        kGravity * bankCos + (longitudinalSpeed * current_.yawRate) * bankSin);
+        kGravity * bankCos * pitchCos + (longitudinalSpeed * current_.yawRate) * bankSin);
     const float sprungMassKg =
         std::max(100.0F, config_.massKg - config_.unsprungMassPerWheelKg * 4.0F);
     const float unsprungWeightN = config_.unsprungMassPerWheelKg * effectiveGravity;
@@ -629,6 +752,10 @@ void Vehicle::step(
         sprungMassKg * effectiveGravity - staticFrontSprungLoadN;
 
     const auto computeAero = [&](float frontRideHeightM, float rearRideHeightM) {
+        const float rearWingDownforceScale =
+            std::max(0.35F, 1.0F + config_.rearWingSetting * config_.rearWingDownforcePerStep);
+        const float frontWingBalanceShift =
+            config_.frontWingSetting * config_.frontWingAeroBalancePerStep;
         const float frontRide = std::max(0.001F, frontRideHeightM);
         const float rearRide = std::max(0.001F, rearRideHeightM);
         const float frontEffect = std::exp(std::clamp(
@@ -665,6 +792,7 @@ void Vehicle::step(
             (rearStall - frontStall) * config_.aeroStallCopShift;
         const float frontFraction = std::clamp(
             config_.frontDownforceFraction +
+                frontWingBalanceShift +
                 rake * config_.aeroCopShiftPerMeter +
                 rideHeightBalanceShift +
                 brakingShift +
@@ -672,7 +800,7 @@ void Vehicle::step(
             config_.minFrontDownforceFraction,
             config_.maxFrontDownforceFraction);
         return AeroState{
-            speedSquared * config_.downforceNPerMps2 * groundEffect * stallMultiplier,
+            speedSquared * config_.downforceNPerMps2 * rearWingDownforceScale * groundEffect * stallMultiplier,
             frontFraction,
             1.0F - stallBlend,
         };
@@ -684,6 +812,7 @@ void Vehicle::step(
     const float suspensionRearAeroN = aero.downforceN - suspensionFrontAeroN;
 
     std::array<float, kWheelCount> suspensionCompression{};
+    std::array<float, kWheelCount> staticSuspensionCompression{};
     std::array<float, kWheelCount> suspensionForce{};
     std::array<float, kWheelCount> tireNormalLoad{};
     std::array<float, kWheelCount> mountTravel{};
@@ -693,10 +822,10 @@ void Vehicle::step(
     for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
         const bool front = corners[wheel].front;
         const float springRate = front ? config_.frontSpringRateNPerM : config_.rearSpringRateNPerM;
-        const float damper = front ? config_.frontDamperNPerMps : config_.rearDamperNPerMps;
         const float staticCornerLoad =
             (front ? staticFrontSprungLoadN : staticRearSprungLoadN) * 0.5F;
         const float staticCompression = staticCornerLoad / std::max(1.0F, springRate);
+        staticSuspensionCompression[wheel] = staticCompression;
         mountTravel[wheel] =
             current_.chassisHeaveM -
             current_.chassisPitchRadians * corners[wheel].z +
@@ -709,6 +838,10 @@ void Vehicle::step(
         suspensionCompression[wheel] =
             std::max(0.0F, staticCompression + hubTravel[wheel] - mountTravel[wheel]);
         const float compressionRate = hubVelocity[wheel] - mountVelocity[wheel];
+        const float damper =
+            front
+                ? (compressionRate >= 0.0F ? config_.frontDamperBumpNPerMps : config_.frontDamperReboundNPerMps)
+                : (compressionRate >= 0.0F ? config_.rearDamperBumpNPerMps : config_.rearDamperReboundNPerMps);
         float springForce = springRate * suspensionCompression[wheel] + damper * compressionRate;
         const float bumpStart = staticCompression + config_.maxSuspensionCompressionM;
         if (suspensionCompression[wheel] > bumpStart) {
@@ -735,11 +868,15 @@ void Vehicle::step(
             (front ? staticFrontSprungLoadN : staticRearSprungLoadN) * 0.5F;
         const float tireStaticCompression =
             (staticCornerLoad + unsprungWeightN) / std::max(1.0F, config_.tireVerticalStiffnessNPerM);
-        const float tireCompression = std::max(0.0F, tireStaticCompression - hubTravel[wheel]);
+        const float tireCompression =
+            std::max(0.0F, tireStaticCompression - hubTravel[wheel] + roadHeight[wheel]);
+        const float roadNormalY =
+            std::clamp(surfaceContacts[wheel].roadNormalY, 0.65F, 1.0F);
         const float tireForce =
             config_.tireVerticalStiffnessNPerM * tireCompression -
-            config_.tireVerticalDampingNPerMps * hubVelocity[wheel];
-        tireNormalLoad[wheel] = std::max(0.0F, tireForce);
+            config_.tireVerticalDampingNPerMps *
+                (hubVelocity[wheel] - roadHeightVelocity[wheel]);
+        tireNormalLoad[wheel] = std::max(0.0F, tireForce / roadNormalY);
 
         const float hubAcceleration =
             (tireNormalLoad[wheel] - suspensionForce[wheel] - unsprungWeightN) /
@@ -758,9 +895,14 @@ void Vehicle::step(
         }
     }
 
-    const float longitudinalLoadTransfer =
+    const float instantaneousLongitudinalLoadTransfer =
         config_.massKg * current_.longitudinalG * kGravity * config_.centerOfMassHeightM /
         std::max(0.1F, config_.wheelbaseM);
+    const float longitudinalTransferResponse =
+        1.0F - std::exp(-safeDt / std::max(0.001F, config_.longitudinalLoadTransferTauS));
+    current_.filtered_long_load_transfer_n += longitudinalTransferResponse *
+        (instantaneousLongitudinalLoadTransfer - current_.filtered_long_load_transfer_n);
+    const float longitudinalLoadTransfer = current_.filtered_long_load_transfer_n;
     const float totalLateralTransfer =
         config_.massKg * current_.lateralG * kGravity * config_.centerOfMassHeightM /
         std::max(0.1F, config_.trackWidthM);
@@ -836,7 +978,8 @@ void Vehicle::step(
         visualSuspensionTravel[wheel] = hubTravel[wheel] - updatedMountTravel;
         rideHeight[wheel] =
             (corners[wheel].front ? config_.frontStaticRideHeightM : config_.rearStaticRideHeightM) +
-            updatedMountTravel;
+            updatedMountTravel -
+            roadHeight[wheel];
     }
     current_.frontRideHeightM =
         std::max(0.0F, (rideHeight[kFrontLeft] + rideHeight[kFrontRight]) * 0.5F);
@@ -870,13 +1013,18 @@ void Vehicle::step(
         lateralTransferRatio * config_.lateralLoadTransferGripLoss,
         0.0F,
         0.18F);
-    if (longitudinalGripMultiplier < 0.0F) {
-        longitudinalGripMultiplier = gripMultiplier;
+    std::array<float, kWheelCount> lateralEffectiveFriction{};
+    std::array<float, kWheelCount> longitudinalEffectiveFriction{};
+    for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
+        lateralEffectiveFriction[wheel] =
+            config_.frictionCoefficient *
+            std::max(0.05F, surfaceContacts[wheel].lateralGripMultiplier) *
+            lateralGripScale;
+        longitudinalEffectiveFriction[wheel] =
+            config_.frictionCoefficient *
+            std::max(0.05F, surfaceContacts[wheel].longitudinalGripMultiplier) *
+            lateralGripScale;
     }
-    const float lateralEffectiveFriction =
-        config_.frictionCoefficient * std::max(0.05F, gripMultiplier) * lateralGripScale;
-    const float longitudinalEffectiveFriction =
-        config_.frictionCoefficient * std::max(0.05F, longitudinalGripMultiplier) * lateralGripScale;
     std::array<float, kWheelCount> tireTemperature{{
         std::max(kAmbientTireTemperatureC, current_.frontLeftTireTemperatureC),
         std::max(kAmbientTireTemperatureC, current_.frontRightTireTemperatureC),
@@ -891,9 +1039,19 @@ void Vehicle::step(
             config_.tireThermalWindowC,
             config_.tireThermalGripMin);
     }
+    std::array<float, kWheelCount> tireWear{{
+        std::clamp(current_.frontLeftTireWear, 0.0F, 1.0F),
+        std::clamp(current_.frontRightTireWear, 0.0F, 1.0F),
+        std::clamp(current_.rearLeftTireWear, 0.0F, 1.0F),
+        std::clamp(current_.rearRightTireWear, 0.0F, 1.0F),
+    }};
+    std::array<float, kWheelCount> wearGrip{};
+    for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
+        wearGrip[wheel] = tireWearGripScale(tireWear[wheel], config_.tireWearMinGrip);
+    }
 
     const float driveTorqueTotal =
-        throttle * engineTorqueAt(engineRpm, throttle) *
+        throttle * engineTorqueAt(engineRpm, throttle) * engineMapTorqueMultiplier() * engineFuelScale *
         std::clamp(1.0F - rpmLimiterCut_ * 0.72F, 0.0F, 1.0F) *
         gearRatio * config_.finalDriveRatio * config_.drivetrainEfficiency;
     const float engineBrakeTorqueTotal =
@@ -1015,8 +1173,12 @@ void Vehicle::step(
         engineBrakeTorque[wheel] = -opposeSign * engineBrakeMagnitude[wheel];
     }
 
-    const float frontWheelStiffness = config_.frontCorneringStiffness * 0.5F;
-    const float rearWheelStiffness = config_.rearCorneringStiffness * 0.5F;
+    const float frontSetupStiffnessScale =
+        std::max(0.50F, 1.0F + config_.frontWingSetting * config_.frontWingCorneringStiffnessPerStep);
+    const float rearSetupStiffnessScale =
+        std::max(0.50F, 1.0F + config_.rearWingSetting * config_.rearWingCorneringStiffnessPerStep);
+    const float frontWheelStiffness = config_.frontCorneringStiffness * frontSetupStiffnessScale * 0.5F;
+    const float rearWheelStiffness = config_.rearCorneringStiffness * rearSetupStiffnessScale * 0.5F;
     const auto speedAdjustedCorneringStiffness = [&](float staticStiffness, std::size_t wheel) {
         const float omegaNorm =
             std::abs(wheelOmega[wheel]) / std::max(1.0F, config_.tireStiffnessSpeedReferenceRadPerSec);
@@ -1032,17 +1194,24 @@ void Vehicle::step(
         config_.tirePacejkaMinStiffnessFactor,
         config_.tirePacejkaPeakForceTarget,
         config_.tirePacejkaMaxStiffnessFactor);
-    const auto effectiveCamberForWheel = [&](std::size_t wheel) {
+    std::array<float, kWheelCount> physicalCamber{};
+    std::array<float, kWheelCount> solverCamber{};
+    for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
         const float setupCamber =
             corners[wheel].front ? config_.camberAngleFrontRadians : config_.camberAngleRearRadians;
-        return (corners[wheel].x < 0.0F ? -setupCamber : setupCamber);
-    };
+        const float gainRadiansPerM =
+            corners[wheel].front ? config_.frontCamberGainRadiansPerM : config_.rearCamberGainRadiansPerM;
+        const float dynamicBumpTravel =
+            suspensionCompression[wheel] - staticSuspensionCompression[wheel];
+        physicalCamber[wheel] = setupCamber - gainRadiansPerM * dynamicBumpTravel;
+        solverCamber[wheel] = corners[wheel].x < 0.0F ? -physicalCamber[wheel] : physicalCamber[wheel];
+    }
 
     const WheelForce frontLeft = resolveWheelForce(
         steerAngle,
         relaxedSlip[kFrontLeft],
         relaxedSlipRatio[kFrontLeft],
-        effectiveCamberForWheel(kFrontLeft),
+        solverCamber[kFrontLeft],
         config_.tireCamberStiffnessNPerRad,
         true,
         config_.tirePneumaticTrailMaxM,
@@ -1051,8 +1220,8 @@ void Vehicle::step(
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kFrontLeft],
         tireLoadReferenceN,
-        lateralEffectiveFriction * thermalGrip[kFrontLeft],
-        longitudinalEffectiveFriction * thermalGrip[kFrontLeft],
+        lateralEffectiveFriction[kFrontLeft] * thermalGrip[kFrontLeft] * wearGrip[kFrontLeft],
+        longitudinalEffectiveFriction[kFrontLeft] * thermalGrip[kFrontLeft] * wearGrip[kFrontLeft],
         config_.tireLongitudinalGripFraction,
         config_.lateralPeakSlipAngleRadians,
         config_.longitudinalPeakSlipRatio,
@@ -1067,7 +1236,7 @@ void Vehicle::step(
         steerAngle,
         relaxedSlip[kFrontRight],
         relaxedSlipRatio[kFrontRight],
-        effectiveCamberForWheel(kFrontRight),
+        solverCamber[kFrontRight],
         config_.tireCamberStiffnessNPerRad,
         true,
         config_.tirePneumaticTrailMaxM,
@@ -1076,8 +1245,8 @@ void Vehicle::step(
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kFrontRight],
         tireLoadReferenceN,
-        lateralEffectiveFriction * thermalGrip[kFrontRight],
-        longitudinalEffectiveFriction * thermalGrip[kFrontRight],
+        lateralEffectiveFriction[kFrontRight] * thermalGrip[kFrontRight] * wearGrip[kFrontRight],
+        longitudinalEffectiveFriction[kFrontRight] * thermalGrip[kFrontRight] * wearGrip[kFrontRight],
         config_.tireLongitudinalGripFraction,
         config_.lateralPeakSlipAngleRadians,
         config_.longitudinalPeakSlipRatio,
@@ -1092,7 +1261,7 @@ void Vehicle::step(
         0.0F,
         relaxedSlip[kRearLeft],
         relaxedSlipRatio[kRearLeft],
-        effectiveCamberForWheel(kRearLeft),
+        solverCamber[kRearLeft],
         config_.tireCamberStiffnessNPerRad,
         false,
         config_.tirePneumaticTrailMaxM,
@@ -1101,8 +1270,8 @@ void Vehicle::step(
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearLeft],
         tireLoadReferenceN,
-        lateralEffectiveFriction * thermalGrip[kRearLeft],
-        longitudinalEffectiveFriction * thermalGrip[kRearLeft],
+        lateralEffectiveFriction[kRearLeft] * thermalGrip[kRearLeft] * wearGrip[kRearLeft],
+        longitudinalEffectiveFriction[kRearLeft] * thermalGrip[kRearLeft] * wearGrip[kRearLeft],
         config_.tireLongitudinalGripFraction,
         config_.lateralPeakSlipAngleRadians,
         config_.longitudinalPeakSlipRatio,
@@ -1117,7 +1286,7 @@ void Vehicle::step(
         0.0F,
         relaxedSlip[kRearRight],
         relaxedSlipRatio[kRearRight],
-        effectiveCamberForWheel(kRearRight),
+        solverCamber[kRearRight],
         config_.tireCamberStiffnessNPerRad,
         false,
         config_.tirePneumaticTrailMaxM,
@@ -1126,8 +1295,8 @@ void Vehicle::step(
         config_.tireLongitudinalStiffness,
         tireNormalLoad[kRearRight],
         tireLoadReferenceN,
-        lateralEffectiveFriction * thermalGrip[kRearRight],
-        longitudinalEffectiveFriction * thermalGrip[kRearRight],
+        lateralEffectiveFriction[kRearRight] * thermalGrip[kRearRight] * wearGrip[kRearRight],
+        longitudinalEffectiveFriction[kRearRight] * thermalGrip[kRearRight] * wearGrip[kRearRight],
         config_.tireLongitudinalGripFraction,
         config_.lateralPeakSlipAngleRadians,
         config_.longitudinalPeakSlipRatio,
@@ -1154,6 +1323,17 @@ void Vehicle::step(
             forwardZ * wheelForces[wheel].bodyLongitudinalN +
             rightZ * wheelForces[wheel].bodyLateralN;
     }
+    const float motionSign = signOrZero(longitudinalSpeed, kLowSpeedThreshold);
+    if (absoluteLongitudinalSpeed > kLowSpeedThreshold && motionSign != 0.0F) {
+        const float rollingBasePerWheel = config_.rollingResistanceN * 0.25F;
+        for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
+            const float wheelRollingForce =
+                -motionSign * rollingBasePerWheel *
+                std::max(0.1F, surfaceContacts[wheel].resistanceMultiplier);
+            wheelForceWorldX[wheel] += forwardX * wheelRollingForce;
+            wheelForceWorldZ[wheel] += forwardZ * wheelRollingForce;
+        }
+    }
     for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
         tireTemperature[wheel] = updatedTireTemperature(
             tireTemperature[wheel],
@@ -1167,6 +1347,16 @@ void Vehicle::step(
             config_.tireThermalOptimalC,
             config_.tireThermalWindowC,
             config_.tireThermalGripMin);
+        tireWear[wheel] = updatedTireWearRemaining(
+            tireWear[wheel],
+            wheelForces[wheel],
+            tireLongitudinalSpeed[wheel],
+            config_.lateralPeakSlipAngleRadians,
+            config_.longitudinalPeakSlipRatio,
+            config_.tireWearSlidingRatePerWork,
+            config_.tireWearWheelspinRatePerWork,
+            safeDt);
+        wearGrip[wheel] = tireWearGripScale(tireWear[wheel], config_.tireWearMinGrip);
     }
 
     for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
@@ -1182,20 +1372,17 @@ void Vehicle::step(
         wheelRotation[wheel] += wheelOmega[wheel] * safeDt;
     }
 
-    const float dragForce = -longitudinalSpeed * absoluteLongitudinalSpeed * config_.aeroDragNPerMps2;
-    const float motionSign = signOrZero(longitudinalSpeed, kLowSpeedThreshold);
-    const float rollingForce =
-        -motionSign * (absoluteLongitudinalSpeed > kLowSpeedThreshold
-                           ? config_.rollingResistanceN * std::max(0.1F, resistanceMultiplier)
-                           : 0.0F);
-
+    const float rearWingDragScale =
+        std::max(0.35F, 1.0F + config_.rearWingSetting * config_.rearWingDragPerStep);
+    const float dragForce =
+        -longitudinalSpeed * absoluteLongitudinalSpeed * config_.aeroDragNPerMps2 * rearWingDragScale;
     float totalForceWorldX = 0.0F;
     float totalForceWorldZ = 0.0F;
     for (std::size_t wheel = 0; wheel < kWheelCount; ++wheel) {
         totalForceWorldX += wheelForceWorldX[wheel];
         totalForceWorldZ += wheelForceWorldZ[wheel];
     }
-    const float longitudinalExternalForce = dragForce + rollingForce;
+    const float longitudinalExternalForce = dragForce;
     totalForceWorldX += forwardX * longitudinalExternalForce;
     totalForceWorldZ += forwardZ * longitudinalExternalForce;
     // Banking gravity lateral force: decompose relative to the track tangent.
@@ -1203,20 +1390,23 @@ void Vehicle::step(
     // captured by the effective-gravity normal load and produces no net
     // body-lateral push. The lateral component only appears when the
     // car's heading deviates from the track tangent (e.g. sliding sideways).
-    const float trackTangentLength = std::hypot(trackTangentX, trackTangentZ);
+    const float trackTangentLength = std::hypot(averageTrackTangentX, averageTrackTangentZ);
     float bankLateralScale = 1.0F;
     if (trackTangentLength > 0.01F) {
         // Dot product of car's forward vector with track tangent gives
         // cos(heading error). The lateral gravity push scales with
         // sin(heading error) = sqrt(1 - cos^2).
         const float cosHeadingError = std::clamp(
-            (forwardX * trackTangentX + forwardZ * trackTangentZ) / trackTangentLength,
+            (forwardX * averageTrackTangentX + forwardZ * averageTrackTangentZ) / trackTangentLength,
             -1.0F, 1.0F);
         bankLateralScale = std::sqrt(std::max(0.0F, 1.0F - cosHeadingError * cosHeadingError));
     }
     const float gravityLateralForce = -config_.massKg * kGravity * bankSin * bankLateralScale;
     totalForceWorldX += rightX * gravityLateralForce;
     totalForceWorldZ += rightZ * gravityLateralForce;
+    const float gravityLongitudinalForce = -config_.massKg * kGravity * pitchSin;
+    totalForceWorldX += forwardX * gravityLongitudinalForce;
+    totalForceWorldZ += forwardZ * gravityLongitudinalForce;
     const float longitudinalForce = dot(totalForceWorldX, totalForceWorldZ, forwardX, forwardZ);
     const float lateralForce = dot(totalForceWorldX, totalForceWorldZ, rightX, rightZ);
     const float longitudinalAcceleration = longitudinalForce / config_.massKg;
@@ -1242,24 +1432,12 @@ void Vehicle::step(
     }
     const float yawDampingSpeedScale =
         speedSquared / square(std::max(1.0F, config_.aeroYawDampingReferenceSpeedMps));
-    const float rearSlideSaturation = std::max({
-        wheelForces[kRearLeft].usage,
-        wheelForces[kRearRight].usage,
-        std::abs(wheelForces[kRearLeft].slipAngleRadians) /
-            std::max(0.001F, config_.lateralPeakSlipAngleRadians),
-        std::abs(wheelForces[kRearRight].slipAngleRadians) /
-            std::max(0.001F, config_.lateralPeakSlipAngleRadians),
-        std::abs(wheelForces[kRearLeft].longitudinalSlip) /
-            std::max(0.001F, config_.longitudinalPeakSlipRatio),
-        std::abs(wheelForces[kRearRight].longitudinalSlip) /
-            std::max(0.001F, config_.longitudinalPeakSlipRatio),
-    });
-    const float rearSlideFade =
-        smoothStep(1.0F, config_.aeroYawDampingRearSlideFullSaturation, rearSlideSaturation);
-    const float yawDampingSlideScale =
-        1.0F + (config_.aeroYawDampingRearSlideMinScale - 1.0F) * rearSlideFade;
+    const float yawDampingAlignmentScale =
+        config_.aeroYawDampingRearSlideMinScale +
+        (1.0F - config_.aeroYawDampingRearSlideMinScale) *
+            aeroYawAlignmentFactor(current_.yawRadians, current_.velocityX, current_.velocityZ);
     yawMoment -=
-        config_.aeroYawDampingNmPerRadS * yawDampingSpeedScale * yawDampingSlideScale * current_.yawRate;
+        config_.aeroYawDampingNmPerRadS * yawDampingSpeedScale * yawDampingAlignmentScale * current_.yawRate;
     current_.yawRate += yawMoment / std::max(1.0F, config_.yawInertiaKgM2) * safeDt;
     current_.yawRadians += current_.yawRate * safeDt;
     current_.positionX += current_.velocityX * safeDt;
@@ -1273,6 +1451,14 @@ void Vehicle::step(
     current_.frontRightWheelHubVelocityMps = hubVelocity[kFrontRight];
     current_.rearLeftWheelHubVelocityMps = hubVelocity[kRearLeft];
     current_.rearRightWheelHubVelocityMps = hubVelocity[kRearRight];
+    current_.frontLeftRoadHeightM = roadHeight[kFrontLeft];
+    current_.frontRightRoadHeightM = roadHeight[kFrontRight];
+    current_.rearLeftRoadHeightM = roadHeight[kRearLeft];
+    current_.rearRightRoadHeightM = roadHeight[kRearRight];
+    current_.frontLeftRoadHeightVelocityMps = roadHeightVelocity[kFrontLeft];
+    current_.frontRightRoadHeightVelocityMps = roadHeightVelocity[kFrontRight];
+    current_.rearLeftRoadHeightVelocityMps = roadHeightVelocity[kRearLeft];
+    current_.rearRightRoadHeightVelocityMps = roadHeightVelocity[kRearRight];
     current_.frontLeftSuspensionTravelM = visualSuspensionTravel[kFrontLeft];
     current_.frontRightSuspensionTravelM = visualSuspensionTravel[kFrontRight];
     current_.rearLeftSuspensionTravelM = visualSuspensionTravel[kRearLeft];
@@ -1346,6 +1532,14 @@ void Vehicle::step(
     current_.frontRightThermalGrip = thermalGrip[kFrontRight];
     current_.rearLeftThermalGrip = thermalGrip[kRearLeft];
     current_.rearRightThermalGrip = thermalGrip[kRearRight];
+    current_.frontLeftTireWear = tireWear[kFrontLeft];
+    current_.frontRightTireWear = tireWear[kFrontRight];
+    current_.rearLeftTireWear = tireWear[kRearLeft];
+    current_.rearRightTireWear = tireWear[kRearRight];
+    current_.frontLeftCamberRadians = physicalCamber[kFrontLeft];
+    current_.frontRightCamberRadians = physicalCamber[kFrontRight];
+    current_.rearLeftCamberRadians = physicalCamber[kRearLeft];
+    current_.rearRightCamberRadians = physicalCamber[kRearRight];
     current_.frontLeftPneumaticTrailM = frontLeft.pneumaticTrailM;
     current_.frontRightPneumaticTrailM = frontRight.pneumaticTrailM;
     current_.rearLeftPneumaticTrailM = rearLeft.pneumaticTrailM;
@@ -1369,8 +1563,12 @@ void Vehicle::step(
     current_.aeroCenterOfPressure = aero.frontFraction;
     current_.floorStrikeIntensity = std::clamp(floorStrike, 0.0F, 1.0F);
     current_.brakeBias = config_.brakeBias;
+    current_.frontWingSetting = config_.frontWingSetting;
+    current_.rearWingSetting = config_.rearWingSetting;
+    current_.engineMap = engineMap_;
     current_.lateralG = lateralAcceleration / kGravity;
     current_.longitudinalG = longitudinalAcceleration / kGravity;
+    refreshSpeedTelemetry();
     const float limiterBounceRpm =
         rpmLimiterCut_ * (80.0F + 190.0F * limiterPulse);
     current_.rpm = std::clamp(
@@ -1378,7 +1576,9 @@ void Vehicle::step(
         config_.idleRpm,
         config_.redlineRpm);
     current_.gear = currentGear_;
-    refreshSpeedTelemetry();
+    current_.rpmArcStartRpm = rpmArcStartForGear(currentGear_);
+    current_.shiftUpRpm = config_.shiftUpRpm;
+    current_.redlineRpm = config_.redlineRpm;
 }
 
 void Vehicle::resolveBoundary(
@@ -1421,6 +1621,27 @@ float Vehicle::collisionHalfLengthM() const {
     return std::max(config_.wheelbaseM * 0.5F + 1.02F, config_.wheelbaseM * 0.82F);
 }
 
+std::array<WheelContactPatch, 4> Vehicle::wheelContactPatchesWorld() const {
+    const float forwardX = std::sin(current_.yawRadians);
+    const float forwardZ = std::cos(current_.yawRadians);
+    const float rightX = forwardZ;
+    const float rightZ = -forwardX;
+    const float rearDistance = config_.wheelbaseM * config_.frontWeightFraction;
+    const float frontDistance = config_.wheelbaseM - rearDistance;
+    const float halfTrack = config_.trackWidthM * 0.5F;
+    const auto worldPatch = [&](float localX, float localZ) {
+        const float offsetX = rightX * localX + forwardX * localZ;
+        const float offsetZ = rightZ * localX + forwardZ * localZ;
+        return WheelContactPatch{current_.positionX + offsetX, current_.positionZ + offsetZ};
+    };
+    return {{
+        worldPatch(-halfTrack, frontDistance),
+        worldPatch(halfTrack, frontDistance),
+        worldPatch(-halfTrack, -rearDistance),
+        worldPatch(halfTrack, -rearDistance),
+    }};
+}
+
 float Vehicle::collisionHalfWidthM() const {
     return std::max(config_.trackWidthM * 0.5F - 0.05F, 0.90F);
 }
@@ -1447,6 +1668,36 @@ void Vehicle::setBrakeBias(float brakeBias) {
 
 void Vehicle::setAutomaticShift(bool automaticShift) {
     config_.automaticShift = automaticShift;
+}
+
+void Vehicle::cycleEngineMap() {
+    setEngineMap((engineMap_ + 1) % 3);
+}
+
+void Vehicle::setEngineMap(int engineMap) {
+    engineMap_ = std::clamp(engineMap, kEngineMapLean, kEngineMapRich);
+    current_.engineMap = engineMap_;
+    previous_.engineMap = engineMap_;
+}
+
+void Vehicle::setFrontWingSetting(float setting) {
+    config_.frontWingSetting = std::clamp(setting, config_.wingSettingMin, config_.wingSettingMax);
+    current_.frontWingSetting = config_.frontWingSetting;
+    previous_.frontWingSetting = config_.frontWingSetting;
+}
+
+void Vehicle::setRearWingSetting(float setting) {
+    config_.rearWingSetting = std::clamp(setting, config_.wingSettingMin, config_.wingSettingMax);
+    current_.rearWingSetting = config_.rearWingSetting;
+    previous_.rearWingSetting = config_.rearWingSetting;
+}
+
+void Vehicle::adjustFrontWingSetting(float delta) {
+    setFrontWingSetting(config_.frontWingSetting + delta);
+}
+
+void Vehicle::adjustRearWingSetting(float delta) {
+    setRearWingSetting(config_.rearWingSetting + delta);
 }
 
 VehicleState Vehicle::interpolated(float alpha) const {
@@ -1481,6 +1732,14 @@ VehicleState Vehicle::interpolated(float alpha) const {
         blend(previous_.rearLeftWheelHubTravelM, current_.rearLeftWheelHubTravelM);
     result.rearRightWheelHubTravelM =
         blend(previous_.rearRightWheelHubTravelM, current_.rearRightWheelHubTravelM);
+    result.frontLeftRoadHeightM =
+        blend(previous_.frontLeftRoadHeightM, current_.frontLeftRoadHeightM);
+    result.frontRightRoadHeightM =
+        blend(previous_.frontRightRoadHeightM, current_.frontRightRoadHeightM);
+    result.rearLeftRoadHeightM =
+        blend(previous_.rearLeftRoadHeightM, current_.rearLeftRoadHeightM);
+    result.rearRightRoadHeightM =
+        blend(previous_.rearRightRoadHeightM, current_.rearRightRoadHeightM);
     result.frontLeftSuspensionTravelM =
         blend(previous_.frontLeftSuspensionTravelM, current_.frontLeftSuspensionTravelM);
     result.frontRightSuspensionTravelM =
@@ -1489,12 +1748,41 @@ VehicleState Vehicle::interpolated(float alpha) const {
         blend(previous_.rearLeftSuspensionTravelM, current_.rearLeftSuspensionTravelM);
     result.rearRightSuspensionTravelM =
         blend(previous_.rearRightSuspensionTravelM, current_.rearRightSuspensionTravelM);
+    result.frontLeftTireWear = blend(previous_.frontLeftTireWear, current_.frontLeftTireWear);
+    result.frontRightTireWear = blend(previous_.frontRightTireWear, current_.frontRightTireWear);
+    result.rearLeftTireWear = blend(previous_.rearLeftTireWear, current_.rearLeftTireWear);
+    result.rearRightTireWear = blend(previous_.rearRightTireWear, current_.rearRightTireWear);
+    result.frontLeftCamberRadians =
+        blend(previous_.frontLeftCamberRadians, current_.frontLeftCamberRadians);
+    result.frontRightCamberRadians =
+        blend(previous_.frontRightCamberRadians, current_.frontRightCamberRadians);
+    result.rearLeftCamberRadians =
+        blend(previous_.rearLeftCamberRadians, current_.rearLeftCamberRadians);
+    result.rearRightCamberRadians =
+        blend(previous_.rearRightCamberRadians, current_.rearRightCamberRadians);
+    result.fuelGallons = blend(previous_.fuelGallons, current_.fuelGallons);
+    result.fuelBurnRateGps = blend(previous_.fuelBurnRateGps, current_.fuelBurnRateGps);
+    result.fuelAverageBurnRateGps =
+        blend(previous_.fuelAverageBurnRateGps, current_.fuelAverageBurnRateGps);
     return result;
 }
 
 float Vehicle::gearRatioFor(int gear) const {
     const int index = std::clamp(gear, 1, static_cast<int>(config_.gearRatios.size())) - 1;
     return config_.gearRatios[static_cast<std::size_t>(index)];
+}
+
+float Vehicle::rpmArcStartForGear(int gear) const {
+    const int clampedGear = std::clamp(gear, 1, static_cast<int>(config_.gearRatios.size()));
+    const int nextGear = std::min(clampedGear + 1, static_cast<int>(config_.gearRatios.size()));
+    const int referenceGear =
+        nextGear == clampedGear ? std::max(1, clampedGear - 1) : clampedGear;
+    const float fromRatio = gearRatioFor(referenceGear);
+    const float toRatio = gearRatioFor(nextGear);
+    return std::clamp(
+        config_.redlineRpm * toRatio / std::max(0.001F, fromRatio),
+        config_.idleRpm,
+        config_.redlineRpm - 500.0F);
 }
 
 float Vehicle::engineRpmForSpeed(float absoluteLongitudinalSpeed) const {
@@ -1545,6 +1833,47 @@ float Vehicle::engineTorqueAt(float rpm, float throttle) const {
         }
     }
     return config_.engineTorqueNm * config_.torqueCurveKnots[knotCount - 1].torqueNorm;
+}
+
+float Vehicle::engineMapTorqueMultiplier() const {
+    switch (engineMap_) {
+        case kEngineMapLean:
+            return config_.engineMapLeanTorqueMultiplier;
+        case kEngineMapRich:
+            return config_.engineMapRichTorqueMultiplier;
+        case kEngineMapStandard:
+        default:
+            return config_.engineMapStandardTorqueMultiplier;
+    }
+}
+
+float Vehicle::engineMapFuelMultiplier() const {
+    switch (engineMap_) {
+        case kEngineMapLean:
+            return config_.engineMapLeanFuelMultiplier;
+        case kEngineMapRich:
+            return config_.engineMapRichFuelMultiplier;
+        case kEngineMapStandard:
+        default:
+            return config_.engineMapStandardFuelMultiplier;
+    }
+}
+
+float Vehicle::fuelBurnRate(float rpm, float throttle) const {
+    if (config_.fuelCapacityGallons <= 0.0F ||
+        config_.fuelBurnGallonsPerSecondAtRedline <= 0.0F ||
+        current_.fuelGallons <= 0.0F) {
+        return 0.0F;
+    }
+    const float rpmRatio = std::clamp(rpm / std::max(1.0F, config_.redlineRpm), 0.0F, 1.0F);
+    const float loadFactor =
+        config_.fuelIdleLoadFactor + (1.0F - config_.fuelIdleLoadFactor) * clamp01(throttle);
+    const float rpmFactor =
+        config_.fuelIdleRpmFactor + (1.0F - config_.fuelIdleRpmFactor) * rpmRatio;
+    return config_.fuelBurnGallonsPerSecondAtRedline *
+           engineMapFuelMultiplier() *
+           loadFactor *
+           rpmFactor;
 }
 
 void Vehicle::updateGear(float engineRpm, const InputActions& input) {
@@ -1609,6 +1938,18 @@ void Vehicle::refreshSpeedTelemetry() {
     current_.lateralSpeedMps = dot(current_.velocityX, current_.velocityZ, rightX, rightZ);
     current_.gear = currentGear_;
     current_.rpm = engineRpmForDrivenWheels();
+    current_.rpmArcStartRpm = rpmArcStartForGear(currentGear_);
+    current_.shiftUpRpm = config_.shiftUpRpm;
+    current_.redlineRpm = config_.redlineRpm;
+}
+
+float Vehicle::aeroYawAlignmentFactor(float yawRadians, float velocityX, float velocityZ) {
+    if (velocityX * velocityX + velocityZ * velocityZ < 0.0001F) {
+        return 1.0F;
+    }
+    const float velocityHeading = std::atan2(velocityX, velocityZ);
+    const float alignment = std::cos(velocityHeading - yawRadians);
+    return clamp01(alignment * alignment);
 }
 
 void Vehicle::setAeroPreset(int preset) {
@@ -1634,6 +1975,18 @@ void Vehicle::setAeroPreset(int preset) {
 
 const char* Vehicle::aeroPresetName() const {
     return aeroPreset_ == 0 ? "SPEEDWAY" : "ROAD COURSE";
+}
+
+const char* Vehicle::engineMapName() const {
+    switch (engineMap_) {
+        case kEngineMapLean:
+            return "LEAN";
+        case kEngineMapRich:
+            return "RICH";
+        case kEngineMapStandard:
+        default:
+            return "STANDARD";
+    }
 }
 
 }  // namespace sim

@@ -15,6 +15,11 @@
 
 namespace sim {
 
+enum class AppState {
+    Home,
+    Racing,
+};
+
 class App {
 public:
     App();
@@ -24,8 +29,12 @@ private:
     bool initialize();
     void shutdown();
     void updateSmoothedStats(float frameSeconds, const PerformanceStats& measured);
+    void handleHomeActions(const InputActions& actions);
     void handleMenuActions(const InputActions& actions);
+    bool loadTrackConfigForSelection(int selectedTrack, TrackConfig& trackConfig) const;
+    bool startRacingFromHome();
     [[nodiscard]] InputActions drivingActionsFor(const InputActions& actions) const;
+    [[nodiscard]] HomeScreenState homeScreenState() const;
     [[nodiscard]] MenuOverlayState menuOverlayState() const;
 
     GraphicsConfig graphicsConfig_;
@@ -42,6 +51,7 @@ private:
     std::unique_ptr<RaceSession> raceSession_;
     std::unique_ptr<DebugOverlay> overlay_;
     PerformanceStats stats_;
+    AppState appState_ = AppState::Home;
     bool running_ = false;
     bool menuVisible_ = false;
     float benchmarkDurationSeconds_ = 0.0F;
@@ -52,6 +62,9 @@ private:
     int benchmarkFrames_ = 0;
     int benchmarkPhysicsSteps_ = 0;
     int selectedMenuItem_ = 0;
+    int selectedHomeItem_ = 0;
+    int selectedTrackIndex_ = 0;
+    int loadedTrackIndex_ = 0;
     int cameraMode_ = 0;
 };
 

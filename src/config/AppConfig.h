@@ -24,6 +24,7 @@ struct GraphicsConfig {
     float bloomQuarterWeight = 0.98F;
     float hudGlassBlurRadiusPx = 8.0F;
     float hudGlassRefractionRadiusPx = 7.0F;
+    int skidmarkMaxSegments = 2048;
     float cameraStartupShakeSuppressionS = 1.25F;
     float cameraStartupShakeFadeS = 0.75F;
     float cameraAsphaltShake = 0.0F;
@@ -39,6 +40,7 @@ struct GraphicsConfig {
     float cameraBankRollScale = 0.30F;
     float cameraLateralGRollScale = 0.0F;
     float cameraLongitudinalGRollScale = 0.0F;
+    std::string activeTrack = "oval";
     int physicsHz = 360;
     float maxFrameDelta = 0.1F;
 

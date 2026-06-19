@@ -235,6 +235,16 @@ void VehicleConfig::load(const ConfigFile& config) {
         std::clamp(config.getFloat("tires.thermal_window_c", tireThermalWindowC), 5.0F, 90.0F);
     tireThermalGripMin =
         std::clamp(config.getFloat("tires.thermal_grip_min", tireThermalGripMin), 0.30F, 1.0F);
+    tireWearMinGrip =
+        std::clamp(config.getFloat("tires.wear_min_grip", tireWearMinGrip), 0.45F, 1.0F);
+    tireWearSlidingRatePerWork = std::clamp(
+        config.getFloat("tires.wear_sliding_rate_per_work", tireWearSlidingRatePerWork),
+        0.0F,
+        0.001F);
+    tireWearWheelspinRatePerWork = std::clamp(
+        config.getFloat("tires.wear_wheelspin_rate_per_work", tireWearWheelspinRatePerWork),
+        0.0F,
+        0.001F);
     frontRollStiffnessFraction = std::clamp(
         config.getFloat("tires.front_roll_stiffness_fraction", frontRollStiffnessFraction),
         0.1F,
@@ -250,6 +260,40 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getFloat("suspension.front_damper_n_per_mps", frontDamperNPerMps));
     rearDamperNPerMps =
         std::max(0.0F, config.getFloat("suspension.rear_damper_n_per_mps", rearDamperNPerMps));
+    frontDamperBumpNPerMps = std::max(
+        0.0F,
+        config.getFloat("suspension.front_damper_bump_n_per_mps", frontDamperNPerMps));
+    frontDamperReboundNPerMps = std::max(
+        0.0F,
+        config.getFloat("suspension.front_damper_rebound_n_per_mps", frontDamperNPerMps));
+    rearDamperBumpNPerMps = std::max(
+        0.0F,
+        config.getFloat("suspension.rear_damper_bump_n_per_mps", rearDamperNPerMps));
+    rearDamperReboundNPerMps = std::max(
+        0.0F,
+        config.getFloat("suspension.rear_damper_rebound_n_per_mps", rearDamperNPerMps));
+    longitudinalLoadTransferTauS = std::clamp(
+        config.getFloat(
+            "suspension.longitudinal_load_transfer_tau_s",
+            longitudinalLoadTransferTauS),
+        0.005F,
+        1.0F);
+    frontCamberGainRadiansPerM =
+        std::clamp(
+            config.getFloat(
+                "suspension.front_camber_gain_deg_per_m",
+                frontCamberGainRadiansPerM * 180.0F / std::numbers::pi_v<float>),
+            0.0F,
+            60.0F) *
+        std::numbers::pi_v<float> / 180.0F;
+    rearCamberGainRadiansPerM =
+        std::clamp(
+            config.getFloat(
+                "suspension.rear_camber_gain_deg_per_m",
+                rearCamberGainRadiansPerM * 180.0F / std::numbers::pi_v<float>),
+            0.0F,
+            60.0F) *
+        std::numbers::pi_v<float> / 180.0F;
     frontAntiRollBarNPerM = std::max(
         0.0F,
         config.getFloat("suspension.front_anti_roll_bar_n_per_m", frontAntiRollBarNPerM));
@@ -367,6 +411,54 @@ void VehicleConfig::load(const ConfigFile& config) {
         config.getBool("powertrain.automatic_shift", automaticShift);
     automaticShift =
         config.getBool("powertrain.automatic_transmission", legacyAutomaticShift);
+    fuelCapacityGallons = std::clamp(
+        config.getFloat("powertrain.fuel_capacity_gallons", fuelCapacityGallons),
+        0.0F,
+        60.0F);
+    fuelInitialGallons = std::clamp(
+        config.getFloat("powertrain.fuel_initial_gallons", fuelInitialGallons),
+        0.0F,
+        std::max(0.0F, fuelCapacityGallons));
+    fuelBurnGallonsPerSecondAtRedline = std::clamp(
+        config.getFloat("powertrain.fuel_burn_gal_per_s_at_redline", fuelBurnGallonsPerSecondAtRedline),
+        0.0F,
+        0.25F);
+    fuelAverageBurnResponseHz = std::clamp(
+        config.getFloat("powertrain.fuel_average_burn_response_hz", fuelAverageBurnResponseHz),
+        0.001F,
+        4.0F);
+    fuelIdleLoadFactor = std::clamp(
+        config.getFloat("powertrain.fuel_idle_load_factor", fuelIdleLoadFactor),
+        0.0F,
+        1.0F);
+    fuelIdleRpmFactor = std::clamp(
+        config.getFloat("powertrain.fuel_idle_rpm_factor", fuelIdleRpmFactor),
+        0.0F,
+        1.0F);
+    engineMapLeanFuelMultiplier = std::clamp(
+        config.getFloat("powertrain.engine_map_lean_fuel_multiplier", engineMapLeanFuelMultiplier),
+        0.20F,
+        2.0F);
+    engineMapStandardFuelMultiplier = std::clamp(
+        config.getFloat("powertrain.engine_map_standard_fuel_multiplier", engineMapStandardFuelMultiplier),
+        0.20F,
+        2.0F);
+    engineMapRichFuelMultiplier = std::clamp(
+        config.getFloat("powertrain.engine_map_rich_fuel_multiplier", engineMapRichFuelMultiplier),
+        0.20F,
+        2.0F);
+    engineMapLeanTorqueMultiplier = std::clamp(
+        config.getFloat("powertrain.engine_map_lean_torque_multiplier", engineMapLeanTorqueMultiplier),
+        0.50F,
+        1.50F);
+    engineMapStandardTorqueMultiplier = std::clamp(
+        config.getFloat("powertrain.engine_map_standard_torque_multiplier", engineMapStandardTorqueMultiplier),
+        0.50F,
+        1.50F);
+    engineMapRichTorqueMultiplier = std::clamp(
+        config.getFloat("powertrain.engine_map_rich_torque_multiplier", engineMapRichTorqueMultiplier),
+        0.50F,
+        1.50F);
 
     brakeForceN = std::max(
         0.0F,
@@ -484,6 +576,36 @@ void VehicleConfig::load(const ConfigFile& config) {
     aeroBrakeCopShift = speedwayAeroPreset.brakeCopShift;
     aeroStallRideHeightM = speedwayAeroPreset.stallRideHeightM;
     aeroStallDownforceMultiplier = speedwayAeroPreset.stallDownforceMultiplier;
+    wingSettingMin = std::clamp(config.getFloat("setup.wing_setting_min", wingSettingMin), -12.0F, 12.0F);
+    wingSettingMax = std::clamp(config.getFloat("setup.wing_setting_max", wingSettingMax), wingSettingMin, 12.0F);
+    frontWingSetting = std::clamp(
+        config.getFloat("setup.front_wing_setting", frontWingSetting),
+        wingSettingMin,
+        wingSettingMax);
+    rearWingSetting = std::clamp(
+        config.getFloat("setup.rear_wing_setting", rearWingSetting),
+        wingSettingMin,
+        wingSettingMax);
+    frontWingAeroBalancePerStep = std::clamp(
+        config.getFloat("setup.front_wing_aero_balance_per_step", frontWingAeroBalancePerStep),
+        -0.05F,
+        0.05F);
+    frontWingCorneringStiffnessPerStep = std::clamp(
+        config.getFloat("setup.front_wing_cornering_stiffness_per_step", frontWingCorneringStiffnessPerStep),
+        -0.10F,
+        0.10F);
+    rearWingDownforcePerStep = std::clamp(
+        config.getFloat("setup.rear_wing_downforce_per_step", rearWingDownforcePerStep),
+        -0.10F,
+        0.10F);
+    rearWingDragPerStep = std::clamp(
+        config.getFloat("setup.rear_wing_drag_per_step", rearWingDragPerStep),
+        -0.10F,
+        0.10F);
+    rearWingCorneringStiffnessPerStep = std::clamp(
+        config.getFloat("setup.rear_wing_cornering_stiffness_per_step", rearWingCorneringStiffnessPerStep),
+        -0.10F,
+        0.10F);
     rollingResistanceN =
         std::max(0.0F, config.getFloat("resistance.rolling_resistance_n", rollingResistanceN));
 }

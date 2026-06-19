@@ -52,7 +52,7 @@ def save_luma(path: Path, value: np.ndarray, quality: int = 92) -> None:
 
 
 def asphalt_maps(rng: np.random.Generator) -> None:
-    size = 4096
+    size = 2048
     large = fbm(rng, size, ((5, 0.46), (13, 0.30), (41, 0.16), (119, 0.08)))
     aggregate = fbm(rng, size, ((53, 0.26), (181, 0.36), (487, 0.38)))
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
@@ -81,7 +81,7 @@ def asphalt_maps(rng: np.random.Generator) -> None:
 
 
 def grass_maps(rng: np.random.Generator) -> None:
-    size = 4096
+    size = 2048
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
     base_noise = fbm(rng, size, ((7, 0.44), (19, 0.32), (67, 0.18), (193, 0.06)))
     blades_a = 0.5 + 0.5 * np.sin(xx * 0.085 + yy * 0.022 + base_noise * 4.0)

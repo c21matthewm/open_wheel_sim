@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: June 18, 2026
+Last updated: June 19, 2026
 
 This is the canonical current-state document for the Lightweight Open-Wheel Sim
 Prototype. It explains what exists now, how the application works, what has
@@ -26,11 +26,13 @@ The project has completed its native macOS foundation, basic-car movement, the
 first procedural-oval/lap-timing pass, multiple presentation/gameplay passes,
 and the first 3D suspension/drivetrain physics pass. It is a runnable
 single-car time trial prototype with a lightweight multi-body IR-18-inspired
-open-wheel vehicle model, a four-turn 2.5-mile speedway layout, generated
+open-wheel vehicle model, a four-turn 2.5-mile speedway layout, a procedural
+3.6 km natural-terrain "Hill Circuit" road course, generated
 high-detail OBJ vehicle meshes, texture-backed filmic material shading,
 synthesized audio,
 SDL3 haptic force-feedback backend plumbing, a generated skybox/sky pass, HDR
-post processing, an interactive tuning menu, a personal-best ghost car, fixed
+post processing, a modern Home/Racing app flow with pre-race track/setup
+selection, an interactive tuning menu, a personal-best ghost car, fixed
 chase/cockpit camera modes, and a more polished HUD/camera presentation with
 Cook-Torrance material lighting, material occlusion/contact-shadow grounding,
 half-precision two-level bloom,
@@ -38,24 +40,36 @@ frosted HDR HUD glass, dynamic suspension rods, 360 Hz default physics timing,
 locked-distance chase camera framing, center-protected high-speed post blur,
 launch wheelspin-aware automatic shifting, a geometric 9500-RPM-drop speedway
 gear stack with shift cooldown, stateful tire temperature/thermal-grip
-telemetry, generated high-resolution PBR material maps, a generated skybox used
-for environment lighting/reflections, a modern MoTeC-style racing HUD,
-configurable 2x default MSAA scene rendering, and a configurable 2048x2048
-default sun shadow map.
+telemetry, tire wear, fuel consumption with Lean/Standard/Rich engine maps,
+runtime front/rear wing and brake-bias setup controls, bi-linear
+bump/rebound damping, per-wheel surface/contact-height sampling, generated
+compact PBR material maps, a generated skybox used for environment lighting/reflections,
+a modern MoTeC-style racing HUD with wheelspin/slip feedback, configurable 2x
+default MSAA scene rendering, ring-buffered 2048-vertex visual skidmarks, and
+a configurable 2048x2048 default sun shadow map.
 
 The current app can:
 
+- boot to a sleek Home screen instead of immediately dropping onto the track,
+  keep the 360 Hz physics loop idle while Home is active, select Oval or Hill
+  Circuit before starting, adjust front wing, rear wing, and brake bias before
+  entering the session, and return from the ESC menu to Home
 - launch as a native, ad-hoc-signed macOS `.app`
 - create an SDL3 window backed by a native Metal renderer
 - render an approximately 2.5-mile four-turn speedway layout with 5/8-mile long
   straights, 1/8-mile short chutes, quarter-mile turns, 256.135 m corner
-  radius, config-driven banking with 50 m quintic-smoothstep entry/exit
+  radius, the start/finish Yard of Bricks located 304.8 meters past the center of the front straightaway, config-driven banking with 50 m quintic-smoothstep entry/exit
   easement runouts, inside-asphalt-edge banking pivot, flat apron/infield at
   `Y = 0`, material-tagged asphalt, apron, grass, checkpoint markings, plain
   outer wall/fence, visible inner infield wall/fence beyond a grass runout,
   grandstands, crowd billboard flecks, and texture-backed material detail; the
   asphalt racing groove and edge lines are blended in the shader from a
   track-lateral coordinate rather than drawn as elevated overlay strips
+- render and drive the selectable "Hill Circuit" road course, a procedural
+  3.6 km counterclockwise natural-terrain circuit with 11 turns, spline-driven
+  elevation, curb strips, grass runoff, armco-style barriers, selected catch
+  fencing, two grandstand zones, and an earthen corkscrew viewing berm, all
+  using the existing material/shadow/HDR pipeline
 - render and drive a generated high-detail OBJ IR-18-inspired car mesh with
   averaged OBJ vertex normals, approximately 5.1 m length, approximately
   1.9 m width, approximately 1.0 m height, a very low wedged nose, narrow
@@ -79,7 +93,7 @@ The current app can:
   alpha-blended asphalt skidmarks, and no exhaust flame or rear-exhaust
   heat-shimmer effects
 - shade world geometry through an HDR Metal path with texture-backed albedo,
-  normal, roughness, and height-style maps, including 4096x4096 asphalt/grass
+  normal, roughness, and height-style maps, including 2048x2048 asphalt/grass
   maps, 2048x2048 concrete/carbon maps, and a generated lat-long skybox used
   for sky, fog, ambient color, and clearcoat reflections; tangent-space normal
   perturbation; shader-integrated asphalt
@@ -98,7 +112,9 @@ The current app can:
 - render a configurable 2048x2048 default sun shadow-map pass on a configurable
   interval that defaults to every other frame, focused by configurable local
   frustum/light-distance settings to roughly an 80 m region around the player
-  car, then apply Poisson-disk PCF-filtered dynamic
+  car; snap the light center to the map's world-space texel grid; submit only
+  static ground ranges whose 3D bounds intersect the actual light frustum; then
+  apply Poisson-disk PCF-filtered dynamic
   shadows in the world shader for the car, wheels, dynamic suspension rods,
   fencing, walls, and grandstand geometry using the cached matching light
   matrix on skipped update frames
@@ -124,14 +140,18 @@ The current app can:
 - render a small 3D digital display onto the animated steering wheel using the
   generated SDF font, showing gear, speed in MPH, RPM, lap time, and delta
 - drive the procedural car with keyboard input using retuned, smoother
-  speed-sensitive keyboard steering rates; full steering input now maps to the
-  configured physical rack limit at every speed
+  speed-sensitive keyboard steering rates and a speed-sensitive keyboard target
+  limit that prevents held digital steering from commanding full lock at
+  200 mph; direct wheel input still maps to the configured physical rack range
 - simulate vehicle motion at a fixed default rate of 360 Hz
 - render independently from physics and interpolate the vehicle transform
 - simulate a sprung chassis with heave, pitch, and roll DOFs, four unsprung
   wheel hubs, spring/damper/anti-roll-bar loads, tire vertical stiffness,
-  elastic lateral and longitudinal load transfer, degressive tire load
-  sensitivity, static setup camber thrust applied before combined-slip limiting,
+  separate bump/rebound damping per axle,
+  elastic lateral load transfer and config-filtered longitudinal load transfer,
+  degressive tire load
+  sensitivity, suspension-coupled dynamic camber gain and camber thrust applied
+  before combined-slip limiting,
   front and rear pneumatic/mechanical trail aligning moment in the tire solver,
   load/speed-dependent transient tire relaxation length,
   Pacejka-lite tire peak/falloff force curves with config-backed minimum
@@ -140,7 +160,7 @@ The current app can:
   induced tire scrub drag from lateral slip, speed-dependent cornering
   stiffness reduction from wheel rotational speed,
   true force-at-corner rigid-body yaw integration from each tire's `r x F`
-  moment plus front aligning moment, physical
+  moment plus solver-owned tire aligning moments, physical
   per-wheel angular velocity/inertia, wheelspin/lockup slip ratio, asymmetric
   combined-slip friction-ellipse limiting, brake bias, config-driven fixed-size
   piecewise-linear engine torque curve with near-redline limiter margins,
@@ -160,54 +180,69 @@ The current app can:
   braking CoP migration, undertray stall/bottoming reduction, asymmetric
   bottoming CoP shift, a small instant current-platform aero-load component,
   and forward CoP migration when the nose rides lower than the rear, alongside
-  modest speed-squared aerodynamic yaw damping that fades during rear-tire
-  breakaway, and
+  heading-coupled speed-squared aerodynamic yaw damping that keeps normal
+  straight/corner stability but fades toward a configured floor when the car is
+  sideways to its velocity, and
   switchable config-backed Speedway and Road Course aero presets that modify
   downforce, drag, base front aero balance, braking CoP shift, stall height, and
   stall reduction
-- apply track banking to physics through lateral gravity decomposed relative to
-  the track tangent (scaling with heading error) and bank-adjusted normal-load
-  calculations, preventing sustained lateral slip on straights
-- apply asphalt/apron/grass lateral grip, grass-specific longitudinal grip,
-  and rolling-resistance multipliers to the tire-force/resistance model; the
+- apply track banking/camber and road grade to physics through lateral and
+  longitudinal gravity decomposed relative to the track tangent, with
+  bank/grade-adjusted normal-load calculations
+- sample asphalt/apron/curb/grass independently at all four tire contact patches,
+  then apply per-wheel lateral grip, grass-specific longitudinal grip, banking,
+  road pitch, local filtered terrain height, local road normal, curb/roughness
+  metadata, and rolling-resistance multipliers to the tire-force/resistance
+  model; Hill wheel queries use the exact center sample's lap distance as an
+  O(1) local-segment hint; the
   tire solver uses separate longitudinal and lateral friction limits so the
-  default grass still slides easily while having enough straight-line bite for
-  keyboard throttle escape
+  default grass still slides easily while having enough straight-line bite and
+  reduced grass-trap damping for keyboard throttle escape
 - apply extra grass-trap rolling resistance, speed-sensitive damping, and
   warmer off-track dust puffs when the car leaves the racing surface
 - contain the vehicle at the outer wall and visible inner infield wall with a
-  yaw-aware four-corner bounding-box collision pass that applies contact-point
-  linear and yaw impulse response, then reset it near start/finish when
-  requested
-- time laps using ordered checkpoints, invalidate off-asphalt laps, and record
+  conservative center-clearance broad phase and a yaw-aware four-corner
+  bounding-box narrow phase that applies contact-point linear and yaw impulse
+  response, then reset it near start/finish when requested
+- time laps using ordered checkpoints, invalidate when the vehicle center enters
+  grass or contacts a wall while allowing individual tire excursions, apron,
+  and curbs, and record
   the best valid completed lap as an in-memory translucent ghost car with
   a compact 2048-sample, render-frame-gated pose buffer instead of
   per-physics-step storage
-- show vehicle, performance, input, and raw SDL device diagnostics
+- show vehicle, performance, input, and raw SDL device diagnostics when the
+  debug overlay is toggled on
 - draw lightweight HUD backing panels, darker worn racing surface, generated
   material texture detail, shader-integrated asphalt rubber/paint markings,
-  outside catch fencing, grandstands, and a checkered start/finish marker with
-  a compact generated WebP texture set for material realism
+  outside catch fencing, full frontstretch grandstands, a render-only IMS-style
+  pit lane/frontstretch complex with pit wall, box markings, garages, Yard of
+  Bricks, and a Pagoda-style infield scoring tower near start/finish, plus a
+  checkered start/finish marker with a compact generated WebP texture set for
+  material realism
 - draw a glass-styled MoTeC-like bottom instrument cluster with rounded
   translucent panels, glow accents, prominent digital MPH/gear/RPM text,
-  brake/throttle bars, tire temperature/usage widgets, dynamic LED shift
-  lights, a curved segmented RPM sweep, generated SDF text for sharper
-  HUD/debug rendering, and a HUD shader that samples the resolved HDR scene
-  behind the panels with a compact 7-tap blur for a frosted refractive glass
-  effect
+  brake/throttle bars, tire temperature/wear/usage widgets that pulse when a
+  tire exceeds high combined-slip usage, a dynamically scaled curved segmented
+  RPM sweep with a small purple optimal-upshift marker and amber wheelspin
+  tint under rear longitudinal slip, fuel-laps and engine-map readouts,
+  generated SDF text for sharper HUD/debug
+  rendering, and a HUD shader that samples the resolved HDR scene behind the
+  panels with a compact 7-tap blur for a frosted refractive glass effect
 - synthesize lightweight SDL3 audio at runtime with a high-revving procedural
   combustion engine layer that combines V6 firing-rate pulse shaping, multiple
   harmonic orders, smoothed RPM/throttle response, turbo whistle/hiss,
   mechanical noise, soft overdrive, off-throttle burbles/pops, tire
-  scrub/squeal noise, and collision impact thuds without external audio assets
-- show an Escape menu for runtime keyboard steering rate tuning, brake-bias
-  adjustment, automatic-transmission toggling, aero preset toggling, and
-  record/ghost reset
+  scrub/squeal noise that begins below peak slip for earlier tire feedback,
+  and collision impact thuds without external audio assets
+- show an Escape menu for runtime keyboard steering rate tuning, front/rear
+  wing adjustment, brake-bias adjustment, engine-map selection,
+  automatic-transmission toggling, aero preset toggling, and record/ghost reset
 - enumerate connected SDL joysticks/gamepads and show axes/buttons/hats
 - map configured wheel axes/buttons with deadzones, G29-style pedal inversion,
   steering/throttle/brake gamma curves, a configurable wheel steering
   sensitivity multiplier, paddle shifting, and a provisional wheel
   camera-toggle button
+- cycle Lean/Standard/Rich engine maps while driving with the `M` hotkey
 - attempt SDL3 haptic force feedback from the selected wheel with constant-force
   streaming, spring fallback, rumble fallback, and clear no-op status when
   unsupported
@@ -216,10 +251,11 @@ The current app can:
   low-speed centering, steering damping, grass/apron vibration, and wall-contact
   jolts
 - load graphics, input, vehicle body/suspension/tire/aero/drivetrain,
-  oval-track, and FFB settings from JSON
+  oval-track, Hill Circuit track, and FFB settings from JSON
 - optionally run a timed live render benchmark with
-  `SIM_BENCHMARK_SECONDS=<seconds>`; the app prints FPS, frame time, physics
-  time, render time, and physics steps/sec before exiting
+  `SIM_BENCHMARK_SECONDS=<seconds>`; benchmark runs automatically enter the
+  selected track, then print FPS, frame time, physics time, render time, and
+  physics steps/sec before exiting
 - toggle fullscreen and diagnostic overlays
 - package SDL3, configs, assets, and documentation inside the app bundle
 
@@ -231,10 +267,10 @@ The current app can:
   lightweight simulator model rather than a full finite-element tire model,
   rigid-body collision engine, or licensed commercial-grade vehicle dynamics
   solver.
-- Wheel hub vertical dynamics assume a smooth local road plane from the sampled
-  track pose. There are no per-wheel terrain height samples, potholes, curbs,
-  or arbitrary 3D mesh contacts yet, so suspension travel on banking is a
-  smooth approximation rather than true independent track-surface probing.
+- Wheel hub vertical dynamics now use deterministic per-wheel contact
+  height/normal samples for banking transitions, seams, curbs, and lightweight
+  road texture. There are still no scanned heightmaps, pothole assets, or
+  arbitrary 3D mesh contacts.
 - Brake discs are intentionally rendered as clean metallic parts without the
   previous red heat-glow presentation. There is still no physical brake thermal
   simulation.
@@ -244,7 +280,7 @@ The current app can:
   particles and rear-exhaust heat shimmer have been removed for a more serious
   sim presentation.
 - The material texture set is generated and compact, not scanned/photogrammetry
-  source art. It now includes 4K asphalt/grass maps, 2K concrete/carbon maps,
+  source art. It now includes 2K asphalt/grass maps, 2K concrete/carbon maps,
   roughness/height-style maps, and a skybox, but it is still an approximate
   lightweight visual layer rather than licensed track-scan source art.
 - The OBJ car, wheel, and steering-wheel meshes are generated project assets,
@@ -260,9 +296,10 @@ The current app can:
 - The asphalt groove/edge-line shader constants are tuned for the current oval
   dimensions; if road/apron/wall widths change substantially, the visual line
   placement should be retuned or moved into config/uniforms.
-- Skidmarks persist only for the current renderer session and stop appending
-  after the fixed skidmark vertex buffer fills. They are visual tire marks, not
-  tire-rubber accumulation affecting physics.
+- Skidmarks persist only for the current renderer session and use a fixed-size
+  ring buffer that overwrites the oldest marks after the configurable 2048
+  vertex cap is reached. They are visual tire marks, not tire-rubber
+  accumulation affecting physics.
 - Shadow mapping is implemented as a single sun-focused orthographic shadow map
   centered near the player car. It is intended for local car/fence/grandstand
   grounding, not full-track long-distance shadow coverage. The default
@@ -281,15 +318,17 @@ The current app can:
 - The current tire model uses relaxation length for lateral slip, dynamic slip
   ratio for longitudinal force, load/speed-dependent relaxation length, a
   compact Pacejka-lite peak/falloff curve, speed-dependent cornering stiffness,
-  induced scrub drag, degressive load sensitivity, static
-  setup camber thrust, friction-circle combined-slip limiting, front
-  pneumatic/mechanical trail aligning moment, and a simple slip/usage-driven
-  tire temperature/thermal-grip state. It still has no pressure, wear, carcass
-  modes, dynamic camber gain, rear pneumatic trail, contact-patch deformation,
-  or fully validated tire test data.
+  induced scrub drag, degressive load sensitivity, suspension-coupled dynamic
+  camber gain and camber thrust, friction-circle combined-slip limiting,
+  front/rear pneumatic/mechanical trail aligning moment, slip/usage-driven tire
+  temperature/thermal-grip state, and a lightweight tire wear state. It still
+  has no pressure, carcass modes, full suspension-geometry solver,
+  contact-patch deformation, or fully validated tire test data.
 - Wheel angular velocity supports wheelspin and lockup behavior. Engine RPM is
   coupled to driven wheel speed with an idle clamp for launchability; a full
   clutch, anti-stall, starter, and engine-stall simulation is not implemented.
+  Fuel burn and Lean/Standard/Rich engine maps are lightweight deterministic
+  approximations rather than ECU/boost/fuel-pressure simulations.
 - Ground-effect downforce reacts to front/rear ride height and rake with an
   undertray stall floor and config-backed aero package presets, but it is an
   analytic model, not CFD or wind-tunnel-derived aero-map data.
@@ -297,8 +336,9 @@ The current app can:
   against the analytic outer and inner wall offsets. It prevents center-only
   wall clipping and adds contact-point yaw impulse response, but there is still
   no general arbitrary-geometry collision system.
-- Runtime menu adjustments are not persisted back to JSON yet; restart returns
-  to the config file defaults.
+- Runtime menu adjustments, including front/rear wing, brake bias, engine map,
+  transmission mode, and aero preset, are not persisted back to JSON yet;
+  restart returns to the config file defaults.
 - The ghost car is an in-memory personal-best lap for the current run only; it
   uses a compact 2048-sample render-frame-gated pose buffer for memory
   efficiency and is not saved to disk between launches.
@@ -331,9 +371,9 @@ The current app can:
    wheel.
 6. `Vehicle` receives its config-driven body, suspension, tire, aero, brake,
    and drivetrain parameters.
-7. `RaceSession` creates the four-turn speedway layout and resets the vehicle
-   shortly before start/finish.
-8. `MetalRenderer` creates the SDL Metal view, Metal pipelines, oval geometry,
+7. `RaceSession` creates the selected track from config and resets the vehicle
+   at that track's spawn pose.
+8. `MetalRenderer` creates the SDL Metal view, Metal pipelines, selected track geometry,
    dynamic suspension/FX buffers, MSAA HDR/depth targets, resolved
    HDR/bloom/shadow targets, generated high-detail OBJ car/wheel/steering
    meshes, high-resolution generated mipmapped PBR material maps, skybox,
@@ -347,7 +387,7 @@ The current app can:
 3. The Escape menu can pause physics stepping while runtime tuning values are
    adjusted.
 4. `GameLoop` accumulates elapsed wall-clock time.
-5. `RaceSession` samples the current surface/banking and advances
+5. `RaceSession` samples the current surface, banking/camber, and grade and advances
    `Vehicle::step` zero or more times at the configured physics rate.
 6. The race session resolves the outer/inner barriers, applies extra grass
    damping, advances checkpoint lap timing, and updates the render-frame-gated
@@ -380,44 +420,54 @@ Physics behavior is not tied to the render frame rate.
 
 ## Main Modules
 
-- `src/app`: application lifecycle and fixed-timestep coordination
+- `src/app`: application lifecycle, Home/Racing state machine, pre-race
+  track/setup selection, pause-menu return-to-Home flow, and fixed-timestep
+  coordination
 - `src/audio`: SDL3 audio-stream ownership and code-synthesized high-rev
   combustion engine, turbo/mechanical noise, off-throttle burbles, tire scrub,
   and collision sounds
 - `src/platform`: SDL window ownership and resource-path lookup
 - `src/config`: small dependency-free JSON config reader and typed app config
 - `src/input`: semantic controls, keyboard input, SDL device enumeration, and
-  provisional wheel mapping, including speed-sensitive keyboard steering rate,
-  pedal inversion, deadzones, gamma curves, direct wheel steering sensitivity,
-  and the configured camera-toggle button
-- `src/game`: shared four-turn speedway geometry math, surface queries with
-  split lateral/longitudinal grip telemetry, race coordination, quintic
-  banking-easement runouts, yaw-aware four-corner inner/outer wall containment,
-  grass-trap rolling resistance and speed-sensitive speed bleed, checkpoint lap
-  timing, and compact render-frame-gated in-memory ghost-lap recording/playback
+  provisional wheel mapping, including speed-sensitive keyboard steering rate
+  and target limiting, pedal inversion, deadzones, gamma curves, direct wheel
+  steering sensitivity, and the configured camera-toggle button
+- `src/game`: polymorphic track interface, `OvalTrack` four-turn speedway
+  geometry math, `HillCircuitTrack` procedural road-course centerline/elevation
+  math, surface queries with split lateral/longitudinal grip telemetry, race
+  coordination, quintic banking-easement runouts, road-course grade/camber
+  samples, signed inner/outer barrier fields consumed by yaw-aware four-corner
+  containment, grass-trap rolling resistance and speed-sensitive speed bleed,
+  track-provided checkpoint lap timing, and compact render-frame-gated
+  in-memory ghost-lap recording/playback
 - `src/physics`: config-driven sprung/unsprung vehicle state, four-corner
-  spring/damper/ARB suspension loads, tire vertical stiffness,
+  spring/damper/ARB suspension loads, split bump/rebound damper rates,
+  tire vertical stiffness,
   load/speed-dependent transient tire relaxation, Pacejka-lite tire forces with
   peak/falloff behavior, induced scrub drag, speed-dependent cornering stiffness,
-  degressive load-sensitive friction limits, static mirrored camber thrust, solver-owned
-  front pneumatic/mechanical trail telemetry and yaw aligning moment,
+  degressive load-sensitive friction limits, suspension-coupled dynamic camber
+  gain with mirrored solver-side camber thrust, solver-owned
+  front/rear pneumatic/mechanical trail telemetry and yaw aligning moment,
   combined-slip tire forces with separate longitudinal/lateral friction limits,
   force-at-corner rigid-body tire torque integration, dynamic tire
-  temperature/thermal-grip state, dynamic wheel angular
-  velocity/slip ratio, banking, IMS speedway geometric gearing with shift
-  cooldown, strict manual/automatic transmission modes, smooth manual-mode RPM
-  limiter bounce, rear clutch-pack limited-slip differential, drivetrain, brake,
+  temperature/thermal-grip/wear state, dynamic wheel angular
+  velocity/slip ratio, banking, fuel consumption with Lean/Standard/Rich engine
+  maps, runtime wing/brake-bias setup offsets, per-wheel surface multipliers
+  from wheel contact patch sampling, IMS speedway geometric gearing
+  with shift cooldown, strict manual/automatic transmission modes, smooth
+  manual-mode RPM limiter bounce, rear clutch-pack limited-slip differential,
+  drivetrain, brake,
   current-ride-height-sensitive ground-effect aero with
   dynamic CoP migration and config-backed speedway/road-course package presets,
-  load-transfer, full-rack steering authority with input-side high-speed
-  keyboard response shaping,
+  load-transfer, direct wheel full-rack steering authority with input-side
+  high-speed keyboard response shaping and target limiting,
   contact-offset wall impulse response, launch wheelspin-aware automatic
   upshift gating, and telemetry behavior
 - `src/render`: Metal renderer, compact ImageIO/CoreGraphics texture loading,
   header-only OBJ loading, generated high-detail OBJ car/wheel/steering meshes,
   generated mipmapped WebP PBR material maps, generated skybox/smoke maps,
-  procedural track/fence/grandstand/HUD geometry, split car-body/wheel
-  rendering, configurable 2x default MSAA HDR scene rendering,
+  procedural track/fence/grandstand/Pagoda scoring tower/HUD geometry, split
+  car-body/wheel rendering, configurable 2x default MSAA HDR scene rendering,
   material-tagged HDR filmic
   Cook-Torrance lighting, track-lateral asphalt marking shader, tangent-space
   normal mapping, roughness/height map sampling, pearl-metallic clearcoat,
@@ -429,24 +479,27 @@ Physics behavior is not tied to the render frame rate.
   chase/cockpit camera modes that consume chassis attitude, direct
   locked-distance chase camera translation, rearward/upward seated cockpit
   sightline, center-protected speed blur, dynamic
-  suspension rod rendering, SDF font atlas, 3D steering-wheel display text,
-  HDR-sampling frosted MoTeC-style HUD geometry with shift LEDs and tire
-  widgets, soft smoke/dust/sparks, persistent visual skidmarks, and shaders
+  suspension rod rendering, SDF font atlas, dedicated low-cost frosted-glass
+  Home screen rendering, 3D steering-wheel display text,
+  HDR-sampling frosted MoTeC-style HUD geometry with dynamic circular RPM arc,
+  purple upshift marker, enlarged tire temp/wear/usage widgets, enlarged
+  brake/throttle fill bars, fuel/map text, soft
+  smoke/dust/sparks, persistent visual skidmarks, and shaders
 - `src/ui`: fixed-capacity HUD, debug, physics, lap, and device-diagnostic
-  overlay plus current Escape tuning-menu text
+  overlay plus current Escape setup/tuning-menu text with a Quit to Home action
 - `src/ffb`: SDL3 haptic force-feedback backend with constant-force streaming,
   spring/rumble fallbacks, front tire pneumatic/mechanical-trail aligning
   torque, peak-slip lightening, smoothing, clipping, and unsupported-device
   no-op status
-- `config`: editable graphics, input, vehicle, four-turn oval track, and FFB
-  data
+- `config`: editable graphics, input, vehicle, four-turn oval track, Hill
+  Circuit track, and FFB data
 - `assets/meshes`: generated Wavefront OBJ meshes for the car body, wheels, and
   animated steering wheel, including an IR-18-inspired low wedge nose, tight
   monocoque, compact tapered sidepods, blade-like front wing, compact rear
   wing, diffuser/floor strakes, suspension rods/joints, halo, helmet/visor,
   rear-size tire/rim/brake geometry with front visual scaling, and yoke wheel
   detail
-- `assets/textures`: generated WebP PBR texture set with 4096x4096
+- `assets/textures`: generated WebP PBR texture set with 2048x2048
   asphalt/grass albedo, normal, roughness, and height maps; 2048x2048
   concrete/carbon albedo/normal/roughness maps; a generated lat-long skybox;
   and a 256x256 soft smoke puff. These are mipmapped at startup and
@@ -463,10 +516,11 @@ scheme for `LightweightSim` when the Xcode generator is available.
 - `config/graphics_default.json`: window, fullscreen, vsync, render scale,
   MSAA sample count, shadow map size, shadow update interval, shadow local
   frustum/light placement, bloom blend weights, HUD glass blur/refraction
-  radii, and physics timing; the default physics tick is 360 Hz for the stiff
-  IR-18-style spring/unsprung-mass setup, the default MSAA sample count is 2,
-  the default shadow map size is 2048, and the default shadow update interval
-  is 2 frames
+  radii, skidmark vertex budget, active track selection, and physics timing;
+  the default active track is
+  `oval`, the default physics tick is 360 Hz for the stiff IR-18-style
+  spring/unsprung-mass setup, the default MSAA sample count is 2, the default
+  shadow map size is 2048, and the default shadow update interval is 2 frames
 - `config/input_default.json`: keyboard response, provisional wheel mapping,
   camera-toggle button, pedal inversion, deadzones, wheel steering sensitivity,
   and wheel/pedal gamma curves; the default keyboard steering rates are
@@ -475,11 +529,14 @@ scheme for `LightweightSim` when the Xcode generator is available.
   suspension, four-corner tire/load-transfer, drivetrain/wheel-inertia, brake,
   IMS-stacked geometric speedway gearing, automatic transmission toggle,
   Pacejka-lite tire curve shape, degressive tire load-sensitivity coefficients,
-  speedway and road-course static camber setup values, tire pneumatic and
-  mechanical trail values, load/speed-dependent tire relaxation length values,
-  speed-dependent tire stiffness-softening values,
-  speedway and road-course aero preset packages,
-  ground-effect aero/CoP sensitivity, resistance parameters, and input-side
+  speedway and road-course static camber setup values, front/rear suspension
+  camber-gain values, tire pneumatic and mechanical trail values,
+  load/speed-dependent tire relaxation length values,
+  speed-dependent tire stiffness-softening values, tire wear, fuel capacity and
+  burn-map values, Lean/Standard/Rich engine map multipliers,
+  split bump/rebound damper coefficients, speedway and road-course aero preset
+  packages, live front/rear wing setup
+  scalars, ground-effect aero/CoP sensitivity, resistance parameters, and input-side
   high-speed keyboard steering response values; the default physical rack limit
   is `18 deg`, the default high-speed keyboard steering scale is `0.45` at
   `90 m/s`, the default rear differential uses `40 Nm` preload with ramp
@@ -488,13 +545,23 @@ scheme for `LightweightSim` when the Xcode generator is available.
 - `config/ffb_default.json`: SDL haptic enable flag and physics FFB gains for
   master strength, centering, damping, pneumatic/mechanical trail aligning
   torque, understeer lightening, grass vibration, collision jolts, and max force
-- `config/track_oval_default.json`: four-turn oval dimensions, short-chute
-  length, banking, banking-easement runout length, outer/inner wall offsets,
-  lateral surface grip, grass longitudinal escape grip, resistance multipliers,
-  wall response, spawn position, and render resolution
+- `config/track_oval_default.json`: IMS-derived four-turn oval dimensions,
+  50 ft straight/60 ft turn render widths, 55 ft average physics width,
+  short-chute length, banking, 300 ft banking-easement runout length,
+  outer/inner wall offsets, render-only pit lane/frontstretch/Pagoda/Yard of
+  Bricks/start-finish gate at 304.8 m, 40 m pre-line spawn, config-driven
+  checkpoint distances, lateral surface grip, terrain-height controls,
+  grass longitudinal escape grip, apron resistance, wall response, spawn
+  position, and render resolution
+- `config/track_hillcircuit_default.json`: Hill Circuit type/name, 3.6 km lap
+  length, 12 m road width, curb/runoff widths, surface grip/resistance values,
+  terrain-height controls, armco barrier offsets, checkpoints, spawn distance,
+  render resolution, and elevation-spine control points
 
 Config changes require an app restart. Live reload is not implemented.
-Escape-menu steering-rate/brake-bias/auto-shift changes are runtime-only.
+`SIM_ACTIVE_TRACK=hillcircuit` can override the active track for one launch.
+Escape-menu steering-rate, wing, brake-bias, engine-map, auto-shift, and aero
+preset changes are runtime-only.
 
 ## Build And Run State
 
@@ -535,6 +602,167 @@ toolchain troubleshooting and optional Xcode project generation.
 
 ## Latest Verification
 
+Verified on June 19, 2026 after the per-wheel terrain contact-height and
+2048 asphalt/grass texture pass:
+
+- `TrackSample` remains trivially copyable and now carries scalar road height,
+  road normal, roughness, curb height/phase, and filter-time data with no
+  string/vector hot-path fields
+- `RaceSession` passes four relative wheel contact heights into `Vehicle`,
+  and `Vehicle` filters them into tire compression, contact velocity, normal
+  load projection, and ride-height-sensitive aero platform calculations
+- `game_tests` now covers disabled terrain preserving the old analytic road
+  plane, banked oval left/right contact-height separation, raised Hill Circuit
+  curb contact height, and curb-side-only wheel-patch height application
+- `python3 scripts/generate_pbr_textures.py` regenerated the material bundle
+  with 2048x2048 asphalt/grass maps; `du -sh assets/textures` reports `4.3M`
+- `cmake --build build --config Release` succeeded and
+  `ctest --test-dir build --output-on-failure` passed both tests
+- the explicit oval benchmark reported `FPS 48.9`, `FRAME 20.44 ms`,
+  `PHYS 0.079 ms`, `RENDER 19.77 ms`, and `PHYS_STEPS 358.5/s`
+- the Hill Circuit benchmark reported `FPS 57.4`, `FRAME 17.41 ms`,
+  `PHYS 0.094 ms`, `RENDER 16.80 ms`, and `PHYS_STEPS 359.2/s`
+
+Verified on June 19, 2026 after the heading-coupled yaw-damping, grass
+rebalance, slip-feedback HUD/audio, and skidmark-buffer trim pass:
+
+- Fix 1 rebuilt cleanly and passed ctest after replacing rear-slip-proxy aero
+  yaw damping with heading-alignment gating; config_tests covers nose-on and
+  sideways alignment factors
+- Fix 2 rebuilt cleanly and passed ctest after rebalancing oval and Hill grass
+  to lower lateral grip, stronger longitudinal escape bite, reduced rolling
+  resistance versus the prior trap value, and lower speed-sensitive grass
+  damping constants
+- Fix 3 rebuilt cleanly and passed ctest after wiring rear wheelspin into an
+  amber RPM-arc tint, pulsing high-usage tire widgets, debug slip-ratio rows,
+  and an earlier tire-scrub audio threshold
+- Fix 4 rebuilt cleanly and passed ctest after reducing the fixed skidmark
+  budget from 3072 to a config-backed 2048-vertex hard cap and converting
+  appends to ring-buffer writes that upload only the newest 12-vertex mark
+
+Verified on June 19, 2026 after stable-shadow, shadow-culling, and physics
+hot-path optimization:
+
+- shadow projection centers are quantized to 2048-map world texels before the
+  light view is built, while the existing two-frame cached update interval is
+  preserved
+- static track shadow geometry is divided into startup-built contiguous ranges;
+  each update submits only ranges whose full 3D AABB intersects the cached
+  light frustum, with no per-frame allocation or Metal-buffer rebuild
+- Hill wheel samples use a center-distance local query validated against exact
+  queries at representative flat, crest, corkscrew, and hairpin locations;
+  the wall broad phase preserves existing four-corner collision regressions
+- before changes, clean eight-second runs measured Oval `FPS 45.8`,
+  `FRAME 21.85 ms`, `PHYS 0.056 ms`, `RENDER 21.04 ms`; and Hill Circuit
+  `FPS 49.4`, `FRAME 20.24 ms`, `PHYS 0.111 ms`, `RENDER 19.41 ms`
+- after changes, Oval measured `FPS 46.5`, `FRAME 21.52 ms`, `PHYS 0.047 ms`,
+  `RENDER 20.76 ms`, `PHYS_STEPS 359.2/s`; Hill Circuit measured `FPS 50.0`,
+  `FRAME 20.00 ms`, `PHYS 0.076 ms`, `RENDER 19.31 ms`, and
+  `PHYS_STEPS 359.2/s`
+- the result reduced all requested measured budgets on both tracks; Hill
+  physics fell approximately 32%, while the remaining frame cost is dominated
+  by the full HDR main scene and post-processing rather than physics
+- `cmake --build build --config Release` succeeded and
+  `ctest --test-dir build --output-on-failure` passed both tests
+
+Verified on June 19, 2026 after correcting the oval start/finish rendering:
+
+- oval distance zero remains the center of the front straight; the configured
+  Yard of Bricks, checkered marker, timing gate, and first checkpoint are
+  co-located 304.8 m forward along the straight, before corner entry at
+  502.92 m
+- `game_tests` geometrically verifies the 304.8 m longitudinal displacement,
+  zero lateral displacement, updated sector gates, and nonzero lap-timing
+  origin
+- the signed app bundle contains the same `304.8` m Yard of Bricks and
+  `[304.8, 1310.64, 2316.48, 3322.32]` checkpoints as the source config
+- JSON config files are now link dependencies, so a config-only edit reruns
+  resource staging and bundle signing instead of leaving stale bundled values;
+  this was verified with a no-source-change rebuild
+- `cmake --build build --config Release` succeeded and
+  `ctest --test-dir build --output-on-failure` passed both tests
+
+Verified on June 19, 2026 after the Hill Circuit hot-path, center-based lap
+validity, oval timing-origin, and filtered longitudinal load-transfer pass:
+
+- `cmake --build build --config Release` succeeded after each independent
+  change; final `ctest --test-dir build --output-on-failure` passed
+  `config_tests` and `game_tests`
+- the Hill Circuit slope-cache regression returned the identical value for
+  1,000 repeated same-segment queries; game regressions also cover a
+  grass-touching tire with an asphalt vehicle center, the 304.8 m oval timing
+  gate, and progressive longitudinal load-transfer response
+- the clean default-oval benchmark reported `FPS 59.4`, `FRAME 16.82 ms`,
+  `PHYS 0.062 ms`, `RENDER 16.29 ms`, and `PHYS_STEPS 359.1/s`
+- the final Hill Circuit benchmark reported `FPS 50.2`, `FRAME 19.94 ms`,
+  `PHYS 0.116 ms`, `RENDER 19.11 ms`, and `PHYS_STEPS 358.4/s`, reducing the
+  previous `0.682 ms` Hill physics result by approximately 83% and placing it
+  about 1.9x above the oval result; the run remained render-bound on this Mac,
+  so the observed Hill render variance is not attributed to the physics work
+
+Verified on June 19, 2026 after the Home Screen and HUD readability overhaul:
+
+- `cmake --build build --config Release` succeeded
+- `ctest --test-dir build --output-on-failure` passed `config_tests` and
+  `game_tests`
+- Unsandboxed GUI launch with
+  `SIM_BENCHMARK_SECONDS=2 ./build/LightweightSim.app/Contents/MacOS/LightweightSim`
+  booted the new Home state and reported `FPS 59.1`, `FRAME 16.93 ms`,
+  `PHYS 0.000 ms`, `RENDER 15.94 ms`, and `PHYS_STEPS 0.0/s`, confirming the
+  fixed-step physics loop stays idle while the Home screen is active
+
+Verified on June 19, 2026 after the IMS oval precision rebuild and render-only
+pit lane/frontstretch complex:
+
+- `cmake --build build --config Release` succeeded
+- `ctest --test-dir build --output-on-failure` passed `config_tests` and
+  `game_tests`; `game_tests` covers `OvalTrack` barrier samples, track-provided
+  checkpoint state, IMS oval precision dimensions, the
+  304.8/1310.64/2316.48/3322.32 m oval checkpoint markers, `track.type = "oval"` loading, flat oval road-pitch
+  regression, Hill Circuit config loading, asphalt/curb/grass classification,
+  corkscrew descent grade, Hill Circuit checkpoint lap completion, and
+  track-provided Hill Circuit spawn reset
+- `SIM_BENCHMARK_SECONDS=8 ./build/LightweightSim.app/Contents/MacOS/LightweightSim`
+  launched the default oval and reported `FPS 59.8`, `FRAME 16.72 ms`,
+  `PHYS 0.050 ms`, `RENDER 16.36 ms`, and `PHYS_STEPS 359.3/s`
+- `SIM_ACTIVE_TRACK=hillcircuit SIM_BENCHMARK_SECONDS=8 ./build/LightweightSim.app/Contents/MacOS/LightweightSim`
+  launched Hill Circuit and reported `FPS 59.4`, `FRAME 16.82 ms`,
+  `PHYS 0.682 ms`, `RENDER 15.55 ms`, and `PHYS_STEPS 359.2/s`
+
+Verified on June 19, 2026 after adding the oval Pagoda-style scoring tower:
+
+- `cmake --build build --config Release` succeeded
+- `ctest --test-dir build --output-on-failure` passed `config_tests` and
+  `game_tests`
+- `SIM_BENCHMARK_SECONDS=8 ./build/LightweightSim.app/Contents/MacOS/LightweightSim`
+  launched the app and reported `FPS 57.7`, `FRAME 17.34 ms`, `PHYS 0.051 ms`,
+  `RENDER 16.73 ms`, and `PHYS_STEPS 358.5/s`
+
+Verified on June 19, 2026 after the dynamic camber-gain and per-step surface
+sample pooling pass:
+
+- `cmake --build build --config Release` succeeded
+- `ctest --test-dir build --output-on-failure` passed `config_tests` and
+  `game_tests`; `config_tests` now covers split damper config loading,
+  front/rear camber-gain config loading, and compressed-front-suspension
+  dynamic negative-camber telemetry, while `game_tests` includes a
+  center-asphalt/inside-tires-apron regression for per-wheel surface sampling
+- `SIM_BENCHMARK_SECONDS=8 ./build/LightweightSim.app/Contents/MacOS/LightweightSim`
+  launched the app and reported `FPS 50.0`, `FRAME 20.01 ms`, `PHYS 0.050 ms`,
+  `RENDER 19.22 ms`, and `PHYS_STEPS 359.1/s`
+
+Verified on June 18, 2026 after the tire wear, fuel consumption, engine-map,
+HUD, hotkey, and setup-menu pass:
+
+- `cmake --build build --config Release` succeeded
+- `ctest --test-dir build --output-on-failure` passed `config_tests` and
+  `game_tests`; `config_tests` now covers tire wear config/load behavior, fuel
+  burn telemetry, Lean/Standard/Rich engine-map torque and burn ordering, and
+  live front/rear wing aero effects
+- `SIM_BENCHMARK_SECONDS=8 ./build/LightweightSim.app/Contents/MacOS/LightweightSim`
+  launched the app and reported `FPS 56.6`, `FRAME 17.67 ms`, `PHYS 0.033 ms`,
+  `RENDER 16.98 ms`, and `PHYS_STEPS 358.5/s`
+
 Verified on June 13, 2026 after the 360 Hz physics timing update, keyboard
 steering retune, IR-18 mesh generator rewrite, regenerated OBJ assets, visual
 wheelbase/tire-scale alignment, cockpit camera update, locked-distance chase
@@ -568,8 +796,9 @@ config-tuning compliance pass:
   `steering_wheel.obj` 3,664 vertices with bounds `X -0.201..0.201`,
   `Y -0.145..0.143`, `Z -0.028..0.024`
 - `python3 scripts/generate_pbr_textures.py` regenerated the WebP material
-  texture set, including 4096x4096 asphalt/grass albedo, normal, roughness, and
-  height maps; 2048x2048 concrete/carbon maps; and
+  texture set, originally including 4096x4096 asphalt/grass albedo, normal,
+  roughness, and height maps later resized to the current 2048x2048 defaults;
+  2048x2048 concrete/carbon maps; and
   `assets/textures/skybox_ims_evening.webp`
 - `cmake --build build --config Release` succeeded
 - `ctest --test-dir build --output-on-failure -C Release` passed
@@ -577,7 +806,8 @@ config-tuning compliance pass:
   physics-rate check, IMS speedway 6th-gear redline, geometric 9500 RPM
   post-shift drop checks, Pacejka-lite tire/aero config load checks,
   degressive load-sensitivity config and high-load cornering regression checks,
-  camber config, straight-line camber-cancellation, and camber-thrust regression checks,
+  camber config, dynamic camber-gain telemetry, straight-line
+  camber-cancellation, and camber-thrust regression checks,
   pneumatic-trail telemetry and aligning-yaw-moment regression checks,
   load-dependent relaxation-length config and telemetry regression checks,
   speedway/road-course aero package config and behavior regression checks,
@@ -679,13 +909,29 @@ Not verified:
   with its selected resolution, refresh mode, and fullscreen/display settings
 - complete timed laps driven by a human on target hardware
 
-## Future Milestones: Modular Track System
+## Modular Track System
 
-The current `Track` class already owns the four-turn speedway pose/sample
-math, but multiple track support should split this into a polymorphic track
-interface and concrete track implementations.
+The current track architecture separates the polymorphic game-facing `Track`
+interface from concrete track implementations. Shared `TrackPose`,
+`TrackSample`, `TrackSurface`, `CheckpointState`, and `BarrierSample` data
+structures live in the common track header. `OvalTrack` owns the existing
+four-turn speedway pose/sample math and keeps the current
+`track_oval_default.json` config with `track.type = "oval"`. `HillCircuitTrack`
+owns the procedural 3.6 km road-course centerline, elevation spline, camber,
+curb/grass runoff, checkpoints, spawn, and signed barrier fields from
+`track_hillcircuit_default.json`. `RaceSession` owns a `std::unique_ptr<Track>`
+from the track factory, so spawn pose, lap timing, per-wheel surface sampling,
+grade/camber, and wall containment go through the interface.
 
-Proposed base interface:
+Hill Circuit elevation slopes are precomputed beside the spline points and
+`slopeAtDistance()` caches its active segment. Nearest-centerline sampling also
+searches a fixed window around the last segment, then uses precomputed fixed
+segment-chunk bounds to reject every region that cannot contain a closer point.
+This preserves exhaustive-search results for teleports and spatially close
+track sections while directly reusing POD samples for duplicate barrier
+queries. These caches add no allocation to the 360 Hz path.
+
+Current base interface:
 
 ```cpp
 class Track {
@@ -701,28 +947,32 @@ public:
 };
 ```
 
-Milestone architecture:
+Completed architecture:
 
-- Rename the current concrete oval implementation to something like
-  `OvalTrack` and keep the existing config as `track_oval_default.json`.
-- Move shared `TrackPose`, `TrackSample`, `TrackSurface`, checkpoint, spawn,
-  and barrier-collision data structures into a common track header.
-- Let `RaceSession` own a `std::unique_ptr<Track>` or equivalent factory
-  result selected from track config, so lap timing, spawn selection, surface
-  multipliers, and barrier containment are track-agnostic.
-- Replace the current inner/outer offset containment with signed barrier fields
-  returned by each track implementation. The oval can keep analytic fields;
-  future road courses can use piecewise centerline segments, splines, or
-  sampled collision strips.
-- Add a second natural-terrain road course of roughly 2.2 miles and 11 turns,
-  inspired by Laguna Seca or Road America without using licensed venue assets.
-  It should include elevation change, curb/grass transitions, slower corners,
-  and a long straight to exercise pitch, roll, heave, tire relaxation,
-  wheelspin/lockup, and ride-height-sensitive downforce outside the current
-  smooth speedway use case.
-- Extend renderer track generation so each concrete track can emit its own
-  road mesh, grass/infield/outfield mesh, barriers, fencing, checkpoints, and
-  spawn visuals while sharing material/shadow/HDR pipelines.
+- The current concrete oval implementation is `OvalTrack`; the config remains
+  `track_oval_default.json`.
+- The second concrete implementation is `HillCircuitTrack`; the config is
+  `track_hillcircuit_default.json` and the user-facing name is `Hill Circuit`.
+- Shared track samples, surfaces, checkpoint state, and signed barrier fields
+  are common data types.
+- `RaceSession` owns a `std::unique_ptr<Track>` factory result selected from
+  `track.type`, and lap timing, spawn selection, surface multipliers, and
+  barrier containment are track-interface calls.
+- Inner/outer wall containment uses `BarrierSample::signedDistanceM` and
+  track-provided barrier normals rather than hard-coded oval offsets in
+  `RaceSession`.
+- `MetalRenderer` builds static track geometry for both concrete tracks and
+  draws them through the same material, shadow, HDR, bloom, and HUD pipelines.
+
+Remaining milestones:
+
+- Move static track render mesh generation fully behind a reusable
+  `TrackRenderGeometry` data object if future tracks need authorable mesh
+  assets rather than concrete renderer-side generation helpers.
+- Add per-wheel terrain-height sampling and curb height profiles; current
+  tracks still expose smooth analytic road planes for suspension travel.
+- Add persistent user selection of `simulation.active_track` instead of editing
+  JSON or using `SIM_ACTIVE_TRACK` at launch.
 
 ## Recommended Next Work
 
